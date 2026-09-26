@@ -1,6 +1,7 @@
 pub mod identity;
 pub mod protocol;
 pub mod sanitize;
+pub mod transfer;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
