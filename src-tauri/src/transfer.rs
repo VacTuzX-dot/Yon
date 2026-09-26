@@ -158,9 +158,13 @@ where
     let mut left = size;
     while left > 0 {
         let want = left.min(CHUNK as u64) as usize;
-        let n = timeout(IDLE_TIMEOUT, r.read(&mut buf[..want]))
-            .await
-            .map_err(|_| BodyError::Idle)??;
+        let n = match timeout(IDLE_TIMEOUT, r.read(&mut buf[..want])).await {
+            Err(_) => return Err(BodyError::Idle),
+            // WHY: over TLS, a peer that just closes the socket (no
+            // close_notify) surfaces as UnexpectedEof, not Ok(0).
+            Ok(Err(e)) if e.kind() == io::ErrorKind::UnexpectedEof => 0,
+            Ok(r) => r?,
+        };
         if n == 0 {
             return Err(BodyError::Truncated);
         }
