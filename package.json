@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit && ! grep -rn dangerouslySetInnerHTML src"
   },
   "dependencies": {
     "react": "^19.1.0",
