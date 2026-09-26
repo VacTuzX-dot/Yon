@@ -1,3 +1,4 @@
+mod app;
 pub mod client;
 pub mod discovery;
 pub mod identity;
@@ -37,6 +38,24 @@ impl Throttle {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .setup(|app| {
+            use tauri::Manager;
+            let state = app::setup(app.handle())?;
+            app.manage(state);
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![
+            app::get_state,
+            app::pick_files,
+            app::clear_selection,
+            app::send,
+            app::cancel_send,
+            app::respond,
+            app::cancel_receive,
+            app::reveal,
+            app::update_settings,
+            app::pick_save_dir,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
