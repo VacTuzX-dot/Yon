@@ -4856,6 +4856,7 @@ name = "yon"
 version = "0.1.0"
 dependencies = [
  "gethostname",
+ "libc",
  "mdns-sd",
  "rcgen",
  "ring",
@@ -4867,6 +4868,7 @@ dependencies = [
  "tauri-plugin-dialog",
  "tokio",
  "tokio-rustls",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

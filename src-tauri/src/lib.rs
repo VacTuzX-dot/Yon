@@ -1,4 +1,5 @@
 pub mod identity;
+pub mod platform;
 pub mod protocol;
 pub mod sanitize;
 pub mod transfer;
