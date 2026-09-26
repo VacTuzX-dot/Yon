@@ -1,9 +1,11 @@
 pub mod client;
+pub mod discovery;
 pub mod identity;
 pub mod platform;
 pub mod protocol;
 pub mod sanitize;
 pub mod server;
+pub mod settings;
 pub mod transfer;
 
 use std::time::{Duration, Instant};
