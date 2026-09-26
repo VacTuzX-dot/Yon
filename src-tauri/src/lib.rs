@@ -1,3 +1,4 @@
+pub mod protocol;
 pub mod sanitize;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
