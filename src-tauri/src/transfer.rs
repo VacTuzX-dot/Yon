@@ -59,7 +59,14 @@ impl Reserved {
     }
 
     pub async fn open_part(&self) -> io::Result<tokio::fs::File> {
-        tokio::fs::File::create(&self.part_path).await
+        // WHY: a leftover (or planted) .yonpart — even a symlink — is removed,
+        // not followed; create_new then refuses anything recreated in between.
+        let _ = tokio::fs::remove_file(&self.part_path).await;
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&self.part_path)
+            .await
     }
 
     /// Move the verified `.yonpart` over our own placeholder.
@@ -267,6 +274,23 @@ mod tests {
         paths.dedup();
         assert_eq!(paths.len(), 16);
         drop(claims);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn planted_part_symlink_is_not_followed() {
+        let dir = temp_dir("symlink");
+        let victim = dir.join("victim.txt");
+        fs::write(&victim, b"keep").unwrap();
+        let r = Reserved::claim(&dir, "a.txt").unwrap();
+        std::os::unix::fs::symlink(&victim, dir.join("a.txt.yonpart")).unwrap();
+        let mut f = r.open_part().await.unwrap();
+        f.write_all(b"evil").await.unwrap();
+        f.flush().await.unwrap();
+        drop(f);
+        assert_eq!(fs::read(&victim).unwrap(), b"keep");
+        drop(r);
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -205,8 +205,16 @@ pub fn validate_relay_url(raw: &str) -> Result<String, &'static str> {
     } else {
         return Err("The relay address starts with wss://");
     };
-    let host = rest.split(['/', ':']).next().unwrap_or("");
-    if host.is_empty() || url.len() > 200 || !url.chars().all(|c| c.is_ascii_graphic()) {
+    // WHY: bare host[:port] only — the phone page (web/link.ts) and the
+    // desktop client both assume it; a path would pass here and fail there.
+    let (host, port) = rest
+        .split_once(':')
+        .map_or((rest, None), |(h, p)| (h, Some(p)));
+    let host_ok = !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    if !host_ok || !port.is_none_or(|p| p.parse::<u16>().is_ok()) || url.len() > 200 {
         return Err("That isn't a valid relay address");
     }
     Ok(url.to_string())
@@ -274,6 +282,15 @@ mod tests {
         assert!(validate_relay_url("http://r.example.com").is_err());
         assert!(validate_relay_url("wss://").is_err());
         assert!(validate_relay_url("wss://a b").is_err());
+        // Phones can only parse host[:port] (web/link.ts).
+        assert_eq!(
+            validate_relay_url("wss://r.example.com:8443"),
+            Ok("wss://r.example.com:8443".into())
+        );
+        assert!(validate_relay_url("wss://r.example.com/base").is_err());
+        assert!(validate_relay_url("wss://r.example.com?x=1").is_err());
+        assert!(validate_relay_url("wss://r.example.com:99999").is_err());
+        assert!(validate_relay_url("wss://[::1]:8787").is_err());
     }
 
     #[test]
