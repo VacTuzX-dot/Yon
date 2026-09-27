@@ -150,7 +150,10 @@ mod tests {
         }
         assert!(w.is_fresh(4) && w.is_fresh(9));
         w.mark(80);
-        assert!(!w.is_fresh(10) && !w.is_fresh(16), "older than 64 behind 80");
+        assert!(
+            !w.is_fresh(10) && !w.is_fresh(16),
+            "older than 64 behind 80"
+        );
         assert!(w.is_fresh(17), "exactly 63 behind is still in the window");
         w.mark(17);
         assert!(!w.is_fresh(17));

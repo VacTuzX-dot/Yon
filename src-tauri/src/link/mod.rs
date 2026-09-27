@@ -11,7 +11,9 @@
 
 pub mod crypto;
 pub mod http;
+pub mod outbox;
 
+use crate::client::{OutFile, SendOutcome, SendStatus};
 use crate::identity::Fingerprint;
 use crate::protocol::{hex, unhex, FileMeta, TransferRequest};
 use crate::server::{is_allowed_peer, Admission, Decision, Receiver, RecvOutcome, Refusal};
@@ -19,6 +21,7 @@ use crate::transfer::Reserved;
 use crate::{platform, Throttle};
 use crypto::{Dir, ReplayWindow, SessionKey};
 use http::{read_request, write_response, HttpError, Request};
+use outbox::{read_chunk, Offer, OfferEvents};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -50,6 +53,12 @@ pub struct LinkLimits {
     pub session_idle: Duration,
     pub http: http::Limits,
     pub max_conns: usize,
+    /// How long an offer to a phone waits to be accepted.
+    pub offer_wait: Duration,
+    /// How long `/inbox` holds a request open waiting for an offer.
+    pub inbox_wait: Duration,
+    /// A phone counts as online this long after its last request.
+    pub online_for: Duration,
 }
 
 impl Default for LinkLimits {
@@ -62,6 +71,9 @@ impl Default for LinkLimits {
                 max_body: CHUNK + 64,
             },
             max_conns: 16,
+            offer_wait: Duration::from_secs(10 * 60),
+            inbox_wait: Duration::from_secs(20),
+            online_for: Duration::from_secs(35),
         }
     }
 }
@@ -93,6 +105,13 @@ pub struct Link {
     slots: Arc<Semaphore>,
     rng: SystemRandom,
     limits: LinkLimits,
+    /// Computer → phone: at most one offer per phone.
+    offers: Mutex<HashMap<[u8; 16], Offer>>,
+    /// Wakes `/inbox` long-polls when an offer is added.
+    inbox: tokio::sync::Notify,
+    /// Last request per phone, for "online" in the device list.
+    seen: Mutex<HashMap<[u8; 16], Instant>>,
+    on_presence: RwLock<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 struct Session {
@@ -140,6 +159,10 @@ impl Link {
             slots: Arc::new(Semaphore::new(limits.max_conns)),
             rng: SystemRandom::new(),
             limits,
+            offers: Mutex::new(HashMap::new()),
+            inbox: tokio::sync::Notify::new(),
+            seen: Mutex::new(HashMap::new()),
+            on_presence: RwLock::new(None),
         })
     }
 
@@ -155,6 +178,93 @@ impl Link {
                 Ok(s) => keep.contains(&s.phone_id),
                 Err(_) => true, // busy: its next request re-checks the phone
             });
+        let gone: Vec<Offer> = {
+            let mut offers = self.offers.lock().expect("lock");
+            let ids: Vec<_> = offers
+                .keys()
+                .filter(|k| !keep.contains(k))
+                .copied()
+                .collect();
+            ids.iter().filter_map(|k| offers.remove(k)).collect()
+        };
+        for offer in gone {
+            offer.finish(SendOutcome::Failed {
+                reason: "The phone was removed".into(),
+            });
+        }
+    }
+
+    /// Offer files to a paired phone. It shows up on the phone's page (now
+    /// if the page is open, otherwise next time it opens) for a while.
+    pub fn offer(
+        &self,
+        id: u64,
+        phone: [u8; 16],
+        files: Vec<OutFile>,
+        events: Arc<dyn OfferEvents>,
+    ) -> Result<(), String> {
+        if !self.phones.read().expect("lock").contains_key(&phone) {
+            return Err("That phone isn't paired any more".into());
+        }
+        let offer = Offer::new(id, files, events)?;
+        {
+            let mut offers = self.offers.lock().expect("lock");
+            if offers.contains_key(&phone) {
+                return Err("Already sending to this phone. Wait or cancel first.".into());
+            }
+            offer.status(SendStatus::Waiting);
+            offers.insert(phone, offer);
+        }
+        self.inbox.notify_waiters();
+        Ok(())
+    }
+
+    /// Cancelled on the desktop; the phone learns at its next request.
+    pub fn cancel_offer(&self, id: u64) {
+        let offer = {
+            let mut offers = self.offers.lock().expect("lock");
+            let key = offers.iter().find(|(_, o)| o.id == id).map(|(k, _)| *k);
+            key.and_then(|k| offers.remove(&k))
+        };
+        if let Some(o) = offer {
+            o.finish(SendOutcome::Cancelled { by_receiver: false });
+        }
+    }
+
+    /// Phones whose page talked to us recently.
+    pub fn online_phones(&self) -> Vec<[u8; 16]> {
+        let online_for = self.limits.online_for;
+        self.seen
+            .lock()
+            .expect("lock")
+            .iter()
+            .filter(|(_, t)| t.elapsed() < online_for)
+            .map(|(k, _)| *k)
+            .collect()
+    }
+
+    /// Called whenever a phone comes online or goes offline.
+    pub fn set_presence_listener(&self, f: Arc<dyn Fn() + Send + Sync>) {
+        *self.on_presence.write().expect("lock") = Some(f);
+    }
+
+    fn presence_changed(&self) {
+        let f = self.on_presence.read().expect("lock").clone();
+        if let Some(f) = f {
+            f();
+        }
+    }
+
+    fn touch(&self, phone: [u8; 16]) {
+        let was_online = self
+            .seen
+            .lock()
+            .expect("lock")
+            .insert(phone, Instant::now())
+            .is_some_and(|t| t.elapsed() < self.limits.online_for);
+        if !was_online {
+            self.presence_changed();
+        }
     }
 
     pub fn set_computer_name(&self, name: String) {
@@ -238,17 +348,19 @@ impl Link {
                 ),
                 ("GET", "/icon.png") => (200, "image/png", vec![], ICON_PNG.to_vec()),
                 ("GET", "/hello") => self.hello(&req, *addr.ip()),
-                ("POST", "/request" | "/chunk" | "/status" | "/done" | "/cancel") => {
-                    match self.sealed(&req, *addr.ip()).await {
-                        Some((ctr, body)) => (
-                            200,
-                            "application/octet-stream",
-                            vec![("X-Yon-Ctr", ctr.to_string())],
-                            body,
-                        ),
-                        None => not_found(),
-                    }
-                }
+                (
+                    "POST",
+                    "/request" | "/chunk" | "/status" | "/done" | "/cancel" | "/inbox" | "/pull"
+                    | "/offer/accept" | "/offer/decline" | "/offer/done" | "/offer/cancel",
+                ) => match self.sealed(&req, *addr.ip()).await {
+                    Some((ctr, body)) => (
+                        200,
+                        "application/octet-stream",
+                        vec![("X-Yon-Ctr", ctr.to_string())],
+                        body,
+                    ),
+                    None => not_found(),
+                },
                 _ => not_found(),
             };
         let _ = write_response(&mut tcp, status, ctype, &headers, &body).await;
@@ -331,7 +443,8 @@ impl Link {
         let ctr: u64 = req.header("x-yon-ctr")?.parse().ok()?;
         let session = self.sessions.lock().expect("lock").get(&sid).cloned()?;
         let mut s = session.lock().await;
-        if !s.inbound.is_fresh(ctr) || !self.phones.read().expect("lock").contains_key(&s.phone_id) {
+        if !s.inbound.is_fresh(ctr) || !self.phones.read().expect("lock").contains_key(&s.phone_id)
+        {
             return None;
         }
         let route = format!("{} {}", req.method, req.target);
@@ -344,29 +457,185 @@ impl Link {
             s.ip = ip; // phone moved networks mid-session; keep going
         }
 
-        let reply = match req.path.as_str() {
-            "/request" => self.on_request(&mut s, &plain).await,
-            "/chunk" => self.on_chunk(&mut s, req, &plain).await,
-            "/status" => status(&s),
-            "/done" => self.on_done(&mut s),
+        let phone = s.phone_id;
+        self.touch(phone);
+
+        let reply: Vec<u8> = match req.path.as_str() {
+            "/request" => self
+                .on_request(&mut s, &plain)
+                .await
+                .to_string()
+                .into_bytes(),
+            "/chunk" => self
+                .on_chunk(&mut s, req, &plain)
+                .await
+                .to_string()
+                .into_bytes(),
+            "/status" => status(&s).to_string().into_bytes(),
+            "/done" => self.on_done(&mut s).to_string().into_bytes(),
             "/cancel" => {
                 self.end_upload(&mut s, |saved| RecvOutcome::Cancelled {
                     by_sender: true,
                     saved,
                 });
-                json!({ "result": "cancelled" })
+                json!({ "result": "cancelled" }).to_string().into_bytes()
             }
-            _ => return None,
+            // WHY: these wait (long-poll, disk reads); release the session
+            // so the phone's other requests aren't stuck behind them.
+            "/inbox" => {
+                drop(s);
+                let v = self.on_inbox(phone).await;
+                s = session.lock().await;
+                v.to_string().into_bytes()
+            }
+            "/pull" => {
+                drop(s);
+                let v = self.on_pull(phone, req).await;
+                s = session.lock().await;
+                v
+            }
+            path => self.on_offer(phone, path, req).to_string().into_bytes(),
         };
         s.out += 1;
-        let sealed = s.key.seal(
-            Dir::ComputerToPhone,
-            s.out,
-            &route,
-            &sid,
-            reply.to_string().as_bytes(),
-        );
+        let sealed = s
+            .key
+            .seal(Dir::ComputerToPhone, s.out, &route, &sid, &reply);
         Some((s.out, sealed))
+    }
+
+    /// Long-poll: the phone's page asks "anything for me?".
+    async fn on_inbox(&self, phone: [u8; 16]) -> Value {
+        let deadline = tokio::time::Instant::now() + self.limits.inbox_wait;
+        loop {
+            // Register for wake-ups before looking, so an offer added in
+            // between isn't missed.
+            let notified = self.inbox.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if let Some(offer) = self.offer_json(phone) {
+                return json!({ "offer": offer });
+            }
+            if tokio::time::timeout_at(deadline, notified).await.is_err() {
+                return json!({ "offer": null });
+            }
+        }
+    }
+
+    fn offer_json(&self, phone: [u8; 16]) -> Option<Value> {
+        let offers = self.offers.lock().expect("lock");
+        let o = offers.get(&phone)?;
+        let files: Vec<Value> = o
+            .files
+            .iter()
+            .map(|f| json!({ "name": f.name, "size": f.size }))
+            .collect();
+        Some(json!({
+            "id": o.id,
+            "from": *self.computer_name.read().expect("lock"),
+            "files": files,
+            "total": o.total,
+            "chunk": CHUNK,
+            "accepted": o.accepted,
+        }))
+    }
+
+    /// `/offer/accept|decline|done|cancel?o=<id>`
+    fn on_offer(&self, phone: [u8; 16], path: &str, req: &Request) -> Value {
+        let Some(id) = req.query("o").and_then(|v| v.parse::<u64>().ok()) else {
+            return json!({ "result": "invalid" });
+        };
+        let mut offers = self.offers.lock().expect("lock");
+        if offers.get(&phone).is_none_or(|o| o.id != id) {
+            return json!({ "result": "none" });
+        }
+        let outcome = match path {
+            "/offer/accept" => {
+                let o = offers.get_mut(&phone).expect("checked");
+                o.accepted = true;
+                o.last_activity = Instant::now();
+                o.status(SendStatus::Transferring {
+                    done: 0,
+                    total: o.total,
+                });
+                return json!({ "result": "accepted", "chunk": CHUNK });
+            }
+            "/offer/decline" => SendOutcome::Declined,
+            "/offer/cancel" => SendOutcome::Cancelled { by_receiver: true },
+            "/offer/done" => {
+                if !offers.get(&phone).expect("checked").all_served() {
+                    return json!({ "result": "incomplete" });
+                }
+                SendOutcome::Completed
+            }
+            _ => return json!({ "result": "invalid" }),
+        };
+        let offer = offers.remove(&phone).expect("checked");
+        drop(offers);
+        let result = match outcome {
+            SendOutcome::Completed => "completed",
+            SendOutcome::Declined => "declined",
+            _ => "cancelled",
+        };
+        offer.finish(outcome);
+        json!({ "result": result })
+    }
+
+    /// `/pull?o=&f=&i=` → tag byte 0 + chunk bytes, or tag 1 + JSON error.
+    async fn on_pull(&self, phone: [u8; 16], req: &Request) -> Vec<u8> {
+        fn error(result: &str) -> Vec<u8> {
+            let mut v = vec![1u8];
+            v.extend_from_slice(json!({ "result": result }).to_string().as_bytes());
+            v
+        }
+        let parse = |k| req.query(k).and_then(|v| v.parse::<u64>().ok());
+        let (Some(id), Some(f), Some(i)) = (parse("o"), parse("f"), parse("i")) else {
+            return error("invalid");
+        };
+        let f = f as usize;
+        let (path, name, offset, len) = {
+            let offers = self.offers.lock().expect("lock");
+            match offers.get(&phone) {
+                Some(o) if o.id == id && o.accepted => match o.chunk_range(f, i) {
+                    Some((offset, len)) => (
+                        o.files[f].path.clone(),
+                        o.files[f].name.clone(),
+                        offset,
+                        len,
+                    ),
+                    None => return error("invalid"),
+                },
+                Some(o) if o.id == id => return error("not_accepted"),
+                _ => return error("cancelled"),
+            }
+        };
+        match read_chunk(&path, offset, len).await {
+            Ok(data) => {
+                if let Some(o) = self.offers.lock().expect("lock").get_mut(&phone) {
+                    if o.id == id {
+                        o.record(f, i, len);
+                    }
+                }
+                let mut v = Vec::with_capacity(1 + data.len());
+                v.push(0);
+                v.extend_from_slice(&data);
+                v
+            }
+            Err(e) => {
+                let offer = {
+                    let mut offers = self.offers.lock().expect("lock");
+                    match offers.get(&phone) {
+                        Some(o) if o.id == id => offers.remove(&phone),
+                        _ => None,
+                    }
+                };
+                if let Some(o) = offer {
+                    o.finish(SendOutcome::Failed {
+                        reason: format!("Couldn't read {name}: {e}"),
+                    });
+                }
+                error("failed")
+            }
+        }
     }
 
     async fn on_request(&self, s: &mut Session, plain: &[u8]) -> Value {
@@ -582,6 +851,43 @@ impl Link {
                 });
                 self.sessions.lock().expect("lock").remove(&sid);
             }
+        }
+
+        let expired: Vec<(Offer, SendOutcome)> = {
+            let mut offers = self.offers.lock().expect("lock");
+            let ids: Vec<_> = offers
+                .iter()
+                .filter_map(|(k, o)| {
+                    if !o.accepted && o.created.elapsed() >= self.limits.offer_wait {
+                        Some((*k, SendOutcome::TimedOut))
+                    } else if o.accepted && o.last_activity.elapsed() >= idle {
+                        Some((
+                            *k,
+                            SendOutcome::Failed {
+                                reason: "The phone stopped receiving".into(),
+                            },
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            ids.into_iter()
+                .filter_map(|(k, out)| offers.remove(&k).map(|o| (o, out)))
+                .collect()
+        };
+        for (offer, outcome) in expired {
+            offer.finish(outcome);
+        }
+
+        let went_offline = {
+            let mut seen = self.seen.lock().expect("lock");
+            let before = seen.len();
+            seen.retain(|_, t| t.elapsed() < self.limits.online_for);
+            seen.len() != before
+        };
+        if went_offline {
+            self.presence_changed();
         }
     }
 }

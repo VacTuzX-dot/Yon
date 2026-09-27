@@ -9,8 +9,10 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::{mpsc, oneshot};
+use yon_lib::client::{OutFile, SendOutcome, SendStatus};
 use yon_lib::identity::Identity;
 use yon_lib::link::crypto::{Dir, SessionKey};
+use yon_lib::link::outbox::OfferEvents;
 use yon_lib::link::{phone_fingerprint, Link, LinkLimits, Phone, CHUNK};
 use yon_lib::protocol::{hex, unhex};
 use yon_lib::server::{Decision, IncomingRequest, Limits, Receiver, ReceiverUi, RecvOutcome};
@@ -63,6 +65,10 @@ impl Drop for Env {
 }
 
 async fn setup(tag: &str, mode: Mode) -> Env {
+    setup_with(tag, mode, LinkLimits::default()).await
+}
+
+async fn setup_with(tag: &str, mode: Mode, limits: LinkLimits) -> Env {
     static N: AtomicUsize = AtomicUsize::new(0);
     let root = std::env::temp_dir().join(format!(
         "yon-link-{tag}-{}-{}",
@@ -85,7 +91,7 @@ async fn setup(tag: &str, mode: Mode) -> Env {
         ui.clone(),
         Limits::default(),
     );
-    let link = Link::new(receiver.clone(), "Test Mac".into(), LinkLimits::default());
+    let link = Link::new(receiver.clone(), "Test Mac".into(), limits);
     let phone = Phone {
         id: [0x11; 16],
         key: [0x22; 32],
@@ -179,6 +185,21 @@ impl FakePhone {
         body: &[u8],
         ctr: u64,
     ) -> (u16, Value) {
+        let (status, plain) = self.raw_bytes(method, target, body, ctr).await;
+        match plain {
+            Some(p) => (status, serde_json::from_slice(&p).unwrap()),
+            None => (status, Value::Null),
+        }
+    }
+
+    /// Sealed call returning the decrypted reply bytes as they are.
+    async fn raw_bytes(
+        &self,
+        method: &str,
+        target: &str,
+        body: &[u8],
+        ctr: u64,
+    ) -> (u16, Option<Vec<u8>>) {
         let route = format!("{method} {target}");
         let sealed = self
             .key
@@ -189,7 +210,7 @@ impl FakePhone {
         ];
         let (status, head, resp) = http(self.addr, method, target, &headers, &sealed).await;
         if status != 200 {
-            return (status, Value::Null);
+            return (status, None);
         }
         let out_ctr: u64 = head
             .lines()
@@ -201,7 +222,7 @@ impl FakePhone {
             .key
             .open(Dir::ComputerToPhone, out_ctr, &route, &self.sid, &resp)
             .unwrap();
-        (status, serde_json::from_slice(&plain).unwrap())
+        (status, Some(plain))
     }
 
     async fn request(&mut self, files: &[(&str, usize)]) -> Value {
@@ -453,4 +474,257 @@ async fn serve_page_for_browser() {
     while let Some(outcome) = env.outcomes.recv().await {
         println!("{outcome:?} → {:?}", listing(&env.recv_dir));
     }
+}
+
+// ---------- computer → phone ----------
+
+#[derive(Default)]
+struct Events {
+    log: Mutex<Vec<String>>,
+    done: Mutex<Option<oneshot::Sender<SendOutcome>>>,
+}
+
+impl OfferEvents for Events {
+    fn status(&self, s: SendStatus) {
+        self.log.lock().unwrap().push(format!("{s:?}"));
+    }
+    fn finished(&self, o: SendOutcome) {
+        self.log.lock().unwrap().push(format!("{o:?}"));
+        if let Some(tx) = self.done.lock().unwrap().take() {
+            let _ = tx.send(o);
+        }
+    }
+}
+
+fn events() -> (Arc<Events>, oneshot::Receiver<SendOutcome>) {
+    let (tx, rx) = oneshot::channel();
+    let e = Arc::new(Events::default());
+    *e.done.lock().unwrap() = Some(tx);
+    (e, rx)
+}
+
+fn out_file(dir: &Path, name: &str, data: &[u8]) -> OutFile {
+    std::fs::create_dir_all(dir).unwrap();
+    let path = dir.join(name);
+    std::fs::write(&path, data).unwrap();
+    OutFile {
+        path,
+        name: name.into(),
+        size: data.len() as u64,
+    }
+}
+
+async fn finished(rx: oneshot::Receiver<SendOutcome>) -> SendOutcome {
+    tokio::time::timeout(Duration::from_secs(10), rx)
+        .await
+        .unwrap()
+        .unwrap()
+}
+
+impl FakePhone {
+    /// Pull one chunk with an explicit counter (so tests can reorder).
+    async fn pull(&self, o: u64, f: usize, i: u64, ctr: u64) -> Result<Vec<u8>, Value> {
+        let (status, plain) = self
+            .raw_bytes("POST", &format!("/pull?o={o}&f={f}&i={i}"), b"", ctr)
+            .await;
+        assert_eq!(status, 200);
+        let plain = plain.unwrap();
+        match plain[0] {
+            0 => Ok(plain[1..].to_vec()),
+            _ => Err(serde_json::from_slice(&plain[1..]).unwrap()),
+        }
+    }
+}
+
+#[tokio::test]
+async fn phone_downloads_offer_in_parallel_and_out_of_order() {
+    let env = setup("offer", Mode::Accept).await;
+    let big: Vec<u8> = (0..(CHUNK * 2 + 777)).map(|i| (i % 253) as u8).collect();
+    let src = env.root.join("send");
+    let files = vec![
+        out_file(&src, "empty.txt", b""),
+        out_file(&src, "big.bin", &big),
+    ];
+    let (ev, done) = events();
+    env.link.offer(7, env.phone.id, files, ev.clone()).unwrap();
+
+    let mut p = FakePhone::hello(env.addr, &env.phone).await;
+    let offer = p.call("POST", "/inbox", b"").await.1["offer"].clone();
+    assert_eq!(offer["id"], 7);
+    assert_eq!(offer["from"], "Test Mac");
+    assert_eq!(offer["files"][1]["size"], big.len());
+    assert!(env.link.online_phones().contains(&env.phone.id));
+
+    // Not accepted yet: nothing to pull.
+    p.ctr += 1;
+    assert_eq!(
+        p.pull(7, 1, 0, p.ctr).await.unwrap_err()["result"],
+        "not_accepted"
+    );
+    assert_eq!(
+        p.call("POST", "/offer/accept?o=7", b"").await.1["result"],
+        "accepted"
+    );
+
+    // Counters used out of order and requests in parallel, like the page.
+    let base = p.ctr;
+    p.ctr += 4;
+    let (c2, c1, c0, e0) = tokio::join!(
+        p.pull(7, 1, 2, base + 4),
+        p.pull(7, 1, 1, base + 2),
+        p.pull(7, 1, 0, base + 3),
+        p.pull(7, 0, 0, base + 1),
+    );
+    let got = [c0.unwrap(), c1.unwrap(), c2.unwrap()].concat();
+    assert_eq!(got, big);
+    assert!(e0.unwrap().is_empty());
+    // A retried chunk is fine; out-of-range and replayed counters are not.
+    p.ctr += 1;
+    assert_eq!(p.pull(7, 1, 2, p.ctr).await.unwrap().len(), 777);
+    p.ctr += 1;
+    assert_eq!(
+        p.pull(7, 1, 3, p.ctr).await.unwrap_err()["result"],
+        "invalid"
+    );
+    let (status, _) = p
+        .raw_bytes("POST", "/pull?o=7&f=1&i=0", b"", base + 3)
+        .await;
+    assert_eq!(status, 404, "replayed counter");
+
+    assert_eq!(
+        p.call("POST", "/offer/done?o=7", b"").await.1["result"],
+        "completed"
+    );
+    assert_eq!(finished(done).await, SendOutcome::Completed);
+    let log = ev.log.lock().unwrap().join(" | ");
+    assert!(log.starts_with("Waiting | Transferring { done: 0"), "{log}");
+    assert!(
+        log.contains(&format!("done: {}, total: {}", big.len(), big.len())),
+        "{log}"
+    );
+}
+
+#[tokio::test]
+async fn inbox_waits_for_an_offer_and_done_needs_every_chunk() {
+    let limits = LinkLimits {
+        inbox_wait: Duration::from_secs(5),
+        ..LinkLimits::default()
+    };
+    let env = setup_with("inbox", Mode::Accept, limits).await;
+    let mut p = FakePhone::hello(env.addr, &env.phone).await;
+    let (ev, done) = events();
+    let files = vec![out_file(&env.root.join("s"), "a.txt", b"hello")];
+    let link = env.link.clone();
+    let phone = env.phone.id;
+    let adder = tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        link.offer(1, phone, files, ev).unwrap();
+    });
+    let t = std::time::Instant::now();
+    let offer = p.call("POST", "/inbox", b"").await.1["offer"].clone();
+    adder.await.unwrap();
+    assert_eq!(offer["id"], 1);
+    assert!(t.elapsed() < Duration::from_secs(3), "woken, not timed out");
+
+    p.call("POST", "/offer/accept?o=1", b"").await;
+    assert_eq!(
+        p.call("POST", "/offer/done?o=1", b"").await.1["result"],
+        "incomplete"
+    );
+    p.ctr += 1;
+    assert_eq!(p.pull(1, 0, 0, p.ctr).await.unwrap(), b"hello");
+    assert_eq!(
+        p.call("POST", "/offer/done?o=1", b"").await.1["result"],
+        "completed"
+    );
+    assert_eq!(finished(done).await, SendOutcome::Completed);
+}
+
+#[tokio::test]
+async fn offers_can_be_declined_or_cancelled_from_either_side() {
+    let limits = LinkLimits {
+        inbox_wait: Duration::from_millis(200),
+        ..LinkLimits::default()
+    };
+    let env = setup_with("offer-end", Mode::Accept, limits).await;
+    let src = env.root.join("s");
+    let mut p = FakePhone::hello(env.addr, &env.phone).await;
+
+    let (ev, done) = events();
+    env.link
+        .offer(1, env.phone.id, vec![out_file(&src, "a", b"1")], ev)
+        .unwrap();
+    let (e2, _) = events();
+    assert!(
+        env.link
+            .offer(2, env.phone.id, vec![out_file(&src, "b", b"2")], e2)
+            .is_err(),
+        "one offer per phone"
+    );
+    assert_eq!(
+        p.call("POST", "/offer/decline?o=1", b"").await.1["result"],
+        "declined"
+    );
+    assert_eq!(finished(done).await, SendOutcome::Declined);
+    assert!(p.call("POST", "/inbox", b"").await.1["offer"].is_null());
+
+    let (ev, done) = events();
+    env.link
+        .offer(3, env.phone.id, vec![out_file(&src, "c", b"3")], ev)
+        .unwrap();
+    p.call("POST", "/offer/accept?o=3", b"").await;
+    env.link.cancel_offer(3);
+    assert_eq!(
+        finished(done).await,
+        SendOutcome::Cancelled { by_receiver: false }
+    );
+    p.ctr += 1;
+    assert_eq!(
+        p.pull(3, 0, 0, p.ctr).await.unwrap_err()["result"],
+        "cancelled"
+    );
+
+    let (ev, done) = events();
+    env.link
+        .offer(4, env.phone.id, vec![out_file(&src, "d", b"4")], ev)
+        .unwrap();
+    assert_eq!(
+        p.call("POST", "/offer/cancel?o=4", b"").await.1["result"],
+        "cancelled"
+    );
+    assert_eq!(
+        finished(done).await,
+        SendOutcome::Cancelled { by_receiver: true }
+    );
+
+    let (ev, _) = events();
+    assert!(
+        env.link
+            .offer(5, [0x99; 16], vec![out_file(&src, "e", b"5")], ev)
+            .is_err(),
+        "unknown phone"
+    );
+}
+
+#[tokio::test]
+async fn unanswered_offers_time_out_and_removed_phones_end_theirs() {
+    let limits = LinkLimits {
+        offer_wait: Duration::from_millis(200),
+        session_idle: Duration::from_millis(300),
+        ..LinkLimits::default()
+    };
+    let env = setup_with("offer-expire", Mode::Accept, limits).await;
+    let src = env.root.join("s");
+    let (ev, done) = events();
+    env.link
+        .offer(1, env.phone.id, vec![out_file(&src, "a", b"1")], ev)
+        .unwrap();
+    assert_eq!(finished(done).await, SendOutcome::TimedOut);
+
+    let (ev, done) = events();
+    env.link
+        .offer(2, env.phone.id, vec![out_file(&src, "b", b"2")], ev)
+        .unwrap();
+    env.link.set_phones(vec![]);
+    assert!(matches!(finished(done).await, SendOutcome::Failed { .. }));
 }
