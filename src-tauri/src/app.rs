@@ -11,16 +11,18 @@ use crate::link::{self, Link, LinkLimits, Phone, LINK_PORT};
 use crate::protocol::{hex, unhex};
 use crate::server::{self, Decision, IncomingRequest, Limits, Receiver, ReceiverUi, RecvOutcome};
 use crate::settings::{self, Settings};
-use crate::{platform, transfer};
+use crate::update::{UpdateDto, UpdateProgressDto};
+use crate::{platform, transfer, Throttle};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use tauri::async_runtime::JoinHandle;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 use tokio::sync::{oneshot, Notify};
 
 /// Finished receives kept for "Show in Finder/Explorer".
@@ -48,6 +50,9 @@ pub struct AppState {
     /// the bind so two quick pairings can't both try to bind the port.
     link_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     link_error: Mutex<Option<String>>,
+    /// Newest version found by the last check, ready to install.
+    update: Mutex<Option<Update>>,
+    updating: AtomicBool,
 }
 
 // ---------- DTOs sent to the UI ----------
@@ -66,6 +71,7 @@ struct MeDto {
     short_fingerprint: String,
     port: u16,
     port_fallback: bool,
+    version: &'static str,
 }
 
 #[derive(Serialize)]
@@ -75,6 +81,7 @@ pub struct SettingsDto {
     port: u16,
     close_to_tray: bool,
     show_in_dock: bool,
+    check_updates: bool,
     trusted: Vec<settings::TrustedDevice>,
     /// Never includes the pairing keys.
     phones: Vec<PhoneDto>,
@@ -361,6 +368,8 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         link,
         link_task: tokio::sync::Mutex::new(None),
         link_error: Mutex::new(None),
+        update: Mutex::new(None),
+        updating: AtomicBool::new(false),
     };
     let port = state.settings.lock().expect("lock").port;
     tauri::async_runtime::block_on(state.switch_listener(port))?;
@@ -466,6 +475,7 @@ impl AppState {
             port: s.port,
             close_to_tray: s.close_to_tray,
             show_in_dock: s.show_in_dock,
+            check_updates: s.check_updates,
             trusted: s.trusted.clone(),
             phones: s
                 .phones
@@ -544,6 +554,7 @@ pub fn get_state(state: State<'_, AppState>) -> StateDto {
             short_fingerprint: short_fingerprint(&state.identity.fingerprint),
             port,
             port_fallback: port != want,
+            version: env!("CARGO_PKG_VERSION"),
         },
         settings: state.settings_dto(),
         devices: state.devices.lock().expect("lock").clone(),
@@ -826,6 +837,111 @@ pub async fn unpair_phone(state: State<'_, AppState>, id: String) -> Result<Sett
             .map_err(|e| format!("Could not save settings: {e}"))?;
     }
     state.sync_link().await;
+    Ok(state.settings_dto())
+}
+
+// ---------- updates ----------
+
+const UPDATE_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+
+/// Ask GitHub Releases for a newer version. Remembers it for
+/// `install_update`; `None` = up to date.
+async fn find_update(app: &AppHandle) -> Result<Option<UpdateDto>, String> {
+    let found = app
+        .updater()
+        .map_err(|e| e.to_string())?
+        .check()
+        .await
+        .map_err(|e| format!("Couldn't check for updates: {e}"))?;
+    let dto = found.as_ref().map(|u| UpdateDto {
+        version: u.version.clone(),
+        notes: u.body.clone(),
+    });
+    if let Some(state) = app.try_state::<AppState>() {
+        *state.update.lock().expect("lock") = found;
+    }
+    Ok(dto)
+}
+
+/// Clean up after earlier updates, then check shortly after launch and
+/// every few hours while the setting is on. Failures (offline) stay quiet.
+pub fn start_updates(app: &AppHandle) {
+    let removed = crate::update::sweep_leftovers(&std::env::temp_dir(), &app.package_info().name);
+    if removed > 0 {
+        eprintln!("[yon] removed {removed} leftover update folder(s)");
+    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        loop {
+            let enabled = app
+                .try_state::<AppState>()
+                .is_some_and(|s| s.settings.lock().expect("lock").check_updates);
+            if enabled {
+                match find_update(&app).await {
+                    Ok(Some(dto)) => {
+                        let _ = app.emit("update-available", dto);
+                    }
+                    Ok(None) => {}
+                    Err(e) => eprintln!("[yon] {e}"),
+                }
+            }
+            tokio::time::sleep(UPDATE_EVERY).await;
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn check_update(app: AppHandle) -> Result<Option<UpdateDto>, String> {
+    find_update(&app).await
+}
+
+/// Download, verify the signature, install and restart. On Windows the
+/// installer takes over and the app exits during this call.
+#[tauri::command]
+pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    // WHY: restarting would cut off transfers in progress.
+    if state.receiver.is_busy() || !state.outgoing.lock().expect("lock").is_empty() {
+        return Err("Wait for the current transfer to finish, then update.".into());
+    }
+    let update = state
+        .update
+        .lock()
+        .expect("lock")
+        .clone()
+        .ok_or("No update to install. Check again.")?;
+    if state.updating.swap(true, Ordering::SeqCst) {
+        return Err("Already updating".into());
+    }
+    let (mut done, mut throttle, emitter) = (0u64, Throttle::new(), app.clone());
+    let result = update
+        .download_and_install(
+            |chunk, total| {
+                done += chunk as u64;
+                if throttle.ready(total == Some(done)) {
+                    let _ = emitter.emit("update-progress", UpdateProgressDto { done, total });
+                }
+            },
+            || {},
+        )
+        .await;
+    state.updating.store(false, Ordering::SeqCst);
+    result.map_err(|e| format!("Update failed: {e}"))?;
+    // WHY: free the single-instance lock first, or the relaunched app can
+    // find this (still exiting) process, hand over to it and quit.
+    #[cfg(desktop)]
+    tauri_plugin_single_instance::destroy(&app);
+    app.restart()
+}
+
+#[tauri::command]
+pub fn set_check_updates(state: State<'_, AppState>, enabled: bool) -> Result<SettingsDto, String> {
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.check_updates = enabled;
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
     Ok(state.settings_dto())
 }
 

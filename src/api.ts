@@ -18,10 +18,16 @@ export interface Settings {
   port: number;
   close_to_tray: boolean;
   show_in_dock: boolean;
+  check_updates: boolean;
   trusted: { id: string; name: string }[];
   phones: { id: string; name: string; created: number }[];
   /** Set when phones can't connect (Yon Link port busy). */
   link_error: string | null;
+}
+
+export interface Update {
+  version: string;
+  notes: string | null;
 }
 
 export interface Qr {
@@ -38,7 +44,13 @@ export interface Pairing {
 }
 
 export interface AppState {
-  me: { name: string; short_fingerprint: string; port: number; port_fallback: boolean };
+  me: {
+    name: string;
+    short_fingerprint: string;
+    port: number;
+    port_fallback: boolean;
+    version: string;
+  };
   settings: Settings;
   devices: Device[];
   discovery_error: string | null;
@@ -121,6 +133,9 @@ export const api = {
   setShowInDock: (enabled: boolean) => invoke<Settings>("set_show_in_dock", { enabled }),
   pairPhone: (name: string) => invoke<Pairing>("pair_phone", { name }),
   unpairPhone: (id: string) => invoke<Settings>("unpair_phone", { id }),
+  checkUpdate: () => invoke<Update | null>("check_update"),
+  installUpdate: () => invoke<void>("install_update"),
+  setCheckUpdates: (enabled: boolean) => invoke<Settings>("set_check_updates", { enabled }),
 };
 
 export interface Events {
@@ -132,6 +147,8 @@ export interface Events {
   "recv-finished": RecvFinished;
   "send-status": { id: number; status: SendStatus };
   "send-finished": { id: number; result: SendOutcome };
+  "update-available": Update;
+  "update-progress": { done: number; total: number | null };
 }
 
 export function on<K extends keyof Events>(

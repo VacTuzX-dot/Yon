@@ -25,6 +25,10 @@ jobs:
           cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
           echo "tag=$tag tauri.conf=$conf package.json=$pkg Cargo.toml=$cargo"
           [ "$tag" = "$conf" ] && [ "$tag" = "$pkg" ] && [ "$tag" = "$cargo" ]
+      - name: Updater public key is set
+        shell: bash
+        # A release without it could never update itself again.
+        run: test -n "$(jq -r '.plugins.updater.pubkey // empty' src-tauri/tauri.conf.json)"
 
   # Same checks as every push (fmt, clippy, tests…) on this exact tag.
   ci:
@@ -72,6 +76,10 @@ jobs:
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update archives; the app only installs updates signed
+          # with this key (public half in tauri.conf.json).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tauriScript: bun tauri
           args: ${{ matrix.args }}

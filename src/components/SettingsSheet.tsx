@@ -1,19 +1,21 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, errorText, isMac, type AppState } from "../api";
+import { api, errorText, isMac, type AppState, type Update } from "../api";
 import PairPhoneSheet from "./PairPhoneSheet";
 
 interface Props {
   state: AppState;
   onChange: (s: AppState) => void;
+  onUpdate: (u: Update) => void;
   onClose: () => void;
 }
 
-export default function SettingsSheet({ state, onChange, onClose }: Props) {
+export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState(state.settings.device_name);
   const [port, setPort] = useState(String(state.settings.port));
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
+  const [checking, setChecking] = useState<"idle" | "busy" | "latest">("idle");
   useEffect(() => ref.current?.showModal(), []);
 
   async function save(e: FormEvent) {
@@ -63,6 +65,33 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
       const settings = await api.unpairPhone(id);
       onChange({ ...state, settings });
     } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function toggleUpdates(enabled: boolean) {
+    setError(null);
+    try {
+      const settings = await api.setCheckUpdates(enabled);
+      onChange({ ...state, settings });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function checkNow() {
+    setError(null);
+    setChecking("busy");
+    try {
+      const found = await api.checkUpdate();
+      if (found) {
+        onUpdate(found);
+        onClose();
+      } else {
+        setChecking("latest");
+      }
+    } catch (err) {
+      setChecking("idle");
       setError(errorText(err));
     }
   }
@@ -169,6 +198,30 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
           <button type="button" className="quiet pair-button" onClick={() => setPairing(true)}>
             Pair a phone
           </button>
+        </div>
+        <div className="field">
+          <span>Updates</span>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={state.settings.check_updates}
+              onChange={(e) => toggleUpdates(e.target.checked)}
+            />
+            <span>
+              Check for updates automatically
+              <span className="hint">Asks GitHub for the latest version. Nothing else is sent.</span>
+            </span>
+          </label>
+          <div className="folder">
+            <span className="hint">
+              {checking === "latest"
+                ? `Yon ${state.me.version} is the latest version.`
+                : `This is Yon ${state.me.version}.`}
+            </span>
+            <button type="button" className="quiet" onClick={checkNow} disabled={checking === "busy"}>
+              {checking === "busy" ? "Checking…" : "Check now"}
+            </button>
+          </div>
         </div>
         <details>
           <summary>Advanced</summary>

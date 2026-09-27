@@ -29,6 +29,10 @@ pub struct Settings {
     /// never sent to the UI after the QR is shown.
     #[serde(default)]
     pub phones: Vec<PairedPhone>,
+    /// Look for a new version on GitHub Releases (the only request Yon makes
+    /// outside the local network). Missing in old files → true.
+    #[serde(default = "default_true")]
+    pub check_updates: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +72,7 @@ impl Settings {
             show_in_dock: true,
             trusted: Vec::new(),
             phones: Vec::new(),
+            check_updates: true,
         }
     }
 
@@ -190,6 +195,7 @@ mod tests {
             port: 60000,
             close_to_tray: false,
             show_in_dock: false,
+            check_updates: false,
             phones: vec![PairedPhone {
                 id: "ab".repeat(16),
                 key: "cd".repeat(32),

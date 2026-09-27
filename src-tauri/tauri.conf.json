@@ -43,6 +43,18 @@
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"
       }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/VacTuzX-dot/Yon/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

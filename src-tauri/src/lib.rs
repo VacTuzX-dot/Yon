@@ -9,6 +9,7 @@ pub mod sanitize;
 pub mod server;
 pub mod settings;
 pub mod transfer;
+mod update;
 
 use std::time::{Duration, Instant};
 
@@ -49,11 +50,13 @@ pub fn run() {
     }));
     let app = builder
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let state = app::setup(app.handle())?;
             let show_in_dock = state.settings_show_in_dock();
             app.manage(state);
             app::setup_tray(app.handle())?;
+            app::start_updates(app.handle());
             if !show_in_dock {
                 app::apply_dock_visibility(app.handle(), false);
             }
@@ -96,6 +99,9 @@ pub fn run() {
             app::set_show_in_dock,
             app::pair_phone,
             app::unpair_phone,
+            app::check_update,
+            app::install_update,
+            app::set_check_updates,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

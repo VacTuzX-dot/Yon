@@ -407,6 +407,11 @@ impl Receiver {
         })
     }
 
+    /// A transfer is being received (or waiting for Accept) right now.
+    pub fn is_busy(&self) -> bool {
+        self.active.lock().expect("lock").is_some()
+    }
+
     pub fn ui(&self) -> &Arc<dyn ReceiverUi> {
         &self.ui
     }

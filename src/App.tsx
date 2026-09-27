@@ -14,6 +14,7 @@ import {
   type Selection,
   type SendOutcome,
   type SendStatus,
+  type Update,
 } from "./api";
 import ConfirmSheet from "./components/ConfirmSheet";
 import DeviceOrbit, { initials, type DeviceActivity } from "./components/DeviceOrbit";
@@ -22,6 +23,7 @@ import { LogoShapes } from "./components/Logo";
 import Ring from "./components/Ring";
 import SettingsSheet from "./components/SettingsSheet";
 import SharePicker from "./components/SharePicker";
+import UpdateBar from "./components/UpdateBar";
 
 interface Outgoing {
   deviceId: string;
@@ -50,6 +52,7 @@ export default function App() {
   const [incoming, setIncoming] = useState<Incoming | null>(null);
   const [outgoing, setOutgoing] = useState<Record<number, Outgoing>>({});
   const [receiving, setReceiving] = useState<Receiving[]>([]);
+  const [update, setUpdate] = useState<Update | null>(null);
   const timers = useRef(new Set<number>());
 
   useEffect(() => {
@@ -64,6 +67,7 @@ export default function App() {
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
       on("incoming", (req) => setIncoming(req)),
       on("shared", () => takeShared()),
+      on("update-available", (u) => setUpdate(u)),
       on("recv-started", (r) =>
         setReceiving((list) => [...list, { id: r.id, from: r.sender_name, done: 0, total: r.total }]),
       ),
@@ -245,6 +249,7 @@ export default function App() {
         </ul>
       )}
 
+      {update && <UpdateBar update={update} onLater={() => setUpdate(null)} />}
       <footer>
         You appear as <strong>{state.me.name}</strong>
       </footer>
@@ -272,7 +277,12 @@ export default function App() {
         />
       )}
       {settingsOpen && (
-        <SettingsSheet state={state} onChange={setState} onClose={() => setSettingsOpen(false)} />
+        <SettingsSheet
+          state={state}
+          onChange={setState}
+          onUpdate={setUpdate}
+          onClose={() => setSettingsOpen(false)}
+        />
       )}
       {incoming && <IncomingDialog key={incoming.id} request={incoming} onAnswer={answer} />}
     </main>

@@ -36,6 +36,10 @@ The builds are not code-signed yet, so your OS will warn you the first time.
 
 **Windows:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
 
+### Updates
+
+Yon checks GitHub Releases for a new version shortly after it starts and every few hours. When one is out, a bar at the bottom of the window says so: click **Update** and Yon downloads it, installs it over the old version and reopens. Files left behind by earlier updates are cleaned up on the next start. You can turn automatic checks off, or check by hand, in **Settings → Updates**.
+
 ### Send from your phone (Yon Link)
 
 iPhone and Android phones send photos and files to your computer through a small web page that Yon serves on your Wi-Fi. There's nothing to install from an app store.
@@ -68,6 +72,7 @@ On Windows (PowerShell), compare the output of `Get-FileHash .\Yon_x.y.z_x64-set
 - Received files are marked as downloaded (macOS quarantine / Windows Mark-of-the-Web), so the OS still checks them when opened.
 - Yon only accepts connections from private network addresses.
 - While Yon is running (including in the menu bar / tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
+- Updates are signed. Yon installs an update only if its signature matches the public key built into the app, so a changed download is refused. The update check is the only request Yon makes outside your local network; it asks GitHub for the latest version and sends nothing about you or your files.
 - **Yon Link (phones) is less protected than the app.** The phone page is plain `http` on your LAN, because browsers only allow secure pages to talk to local devices with a trusted certificate. Every request after the page loads is encrypted and authenticated with the phone's pairing key (ChaCha20-Poly1305), so other people on the Wi-Fi can't read or fake uploads. But someone able to tamper with your Wi-Fi traffic could change the page itself and steal the pairing key. Requests from phones are labelled "web link", and you still accept each one unless you chose "Always accept". The pairing key is in the QR code and the phone's saved link, so treat them like a password. Remove a phone in Settings to cut it off at once. Yon Link only listens (on port 53421) while at least one phone is paired. Details: [threat model](docs/threat-model-yon-link.md), [ADR-001](docs/adr/ADR-001-yon-link-web-mode.md).
 
 Known limits of this version: IPv4 only, the key is stored as a file in the app's data folder (not in the system keychain), and there is no mode that ignores unknown devices entirely yet.
@@ -130,6 +135,16 @@ bun tauri build
 ```
 
 Installers end up in `src-tauri/target/release/bundle/`. Releases are built by GitHub Actions when a `v*` tag is pushed; the tag must match the version in `tauri.conf.json`, `package.json` and `Cargo.toml`.
+
+### Update signing
+
+Releases need the updater key pair (separate from OS code signing):
+
+```bash
+bun tauri signer generate -w ~/.tauri/yon-updater.key
+```
+
+Put the public key (`~/.tauri/yon-updater.key.pub`) in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and the private key and its password in the GitHub Actions secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep a backup of the private key offline: if it's lost, installed copies can't be updated any more; if it leaks, someone else could sign updates. The release workflow stops if the public key is missing.
 
 ### Signing (not set up yet)
 

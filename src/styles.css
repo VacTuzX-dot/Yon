@@ -695,3 +695,32 @@ details .field {
   align-self: flex-start;
   margin-top: 4px;
 }
+
+/* ---------- update bar ---------- */
+
+.update-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin: 0 auto 10px;
+  padding: 8px 10px 8px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 14px;
+  max-width: calc(100% - 32px);
+}
+
+.update-text {
+  overflow-wrap: anywhere;
+}
+
+.primary.small {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.folder .hint {
+  flex: 1;
+}
