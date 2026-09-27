@@ -485,6 +485,30 @@ async fn serve_page_for_browser() {
         hex(&b.id),
         hex(&b.key)
     );
+    // Through a relay too, if one is running (e.g. `bun relay/relay.ts`).
+    if let Ok(relay) = std::env::var("YON_TEST_RELAY") {
+        let secret = [0x5a; 32];
+        tokio::spawn(yon_lib::link::remote::run(
+            env.link.clone(),
+            relay.clone(),
+            secret,
+            CHUNK + 64,
+            |s| println!("relay: {s:?}"),
+        ));
+        let host = relay
+            .split("://")
+            .nth(1)
+            .unwrap_or(&relay)
+            .trim_end_matches('/');
+        println!(
+            "via relay: http://{}/#{}.{}.{}@{}",
+            env.addr,
+            hex(&env.phone.id),
+            hex(&env.phone.key),
+            yon_lib::link::remote::room_id(&secret),
+            host
+        );
+    }
     // Computer → phone: keep offering two files; each outcome is printed.
     let big: Vec<u8> = (0..(CHUNK * 2 + 4321)).map(|i| (i % 251) as u8).collect();
     let src = env.root.join("send");

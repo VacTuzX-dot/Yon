@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Built phone page for GitHub Pages (scripts/build-link.ts)
+site/

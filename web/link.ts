@@ -4,6 +4,7 @@
 // Every text shown here goes through textContent, never innerHTML.
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { COMPUTER_TO_PHONE, PHONE_TO_COMPUTER, ReplayWindow, deriveKey, open, seal } from "./crypto";
+import { RelayTransport, direct, relayWsUrl, type Transport } from "./transport";
 
 type Reply = { result: string; reason?: string; file?: number; next?: number; chunk?: number };
 type Offer = {
@@ -23,8 +24,13 @@ const MAX_RETRIES = 20;
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function readPairing(): { p: Uint8Array; k: Uint8Array } | null {
-  const parse = (s: string | null) => /^#?([0-9a-f]{32})\.([0-9a-f]{64})$/i.exec(s ?? "");
+type Pairing = { p: Uint8Array; k: Uint8Array; transport: Transport };
+
+/** `#<pair id>.<key>` on the LAN, or `#<pair id>.<key>.<room>@<relay host>`
+ * to reach the computer from anywhere through the relay (ADR-003). */
+function readPairing(): Pairing | null {
+  const parse = (s: string | null) =>
+    /^#?([0-9a-f]{32})\.([0-9a-f]{64})(?:\.([0-9a-f]{64})@([a-z0-9.-]+(?::\d{1,5})?))?$/i.exec(s ?? "");
   let m = parse(location.hash);
   // WHY: the fragment is the source of truth (it survives "Add to Home
   // Screen"); localStorage is only a fallback if a browser drops it.
@@ -34,7 +40,12 @@ function readPairing(): { p: Uint8Array; k: Uint8Array } | null {
   } catch {
     // storage blocked (private mode): the fragment alone is enough
   }
-  return m ? { p: hexToBytes(m[1].toLowerCase()), k: hexToBytes(m[2].toLowerCase()) } : null;
+  if (!m) return null;
+  return {
+    p: hexToBytes(m[1].toLowerCase()),
+    k: hexToBytes(m[2].toLowerCase()),
+    transport: m[3] ? new RelayTransport(relayWsUrl(m[4].toLowerCase(), m[3].toLowerCase())) : direct,
+  };
 }
 
 class Session {
@@ -46,20 +57,21 @@ class Session {
     private readonly sid: Uint8Array,
     private readonly key: Uint8Array,
     readonly computer: string,
+    private readonly transport: Transport,
   ) {}
 
-  static async start(p: Uint8Array, k: Uint8Array): Promise<Session> {
+  static async start({ p, k, transport }: Pairing): Promise<Session> {
     const nc = crypto.getRandomValues(new Uint8Array(16));
-    const res = await fetch(`/hello?p=${bytesToHex(p)}&nc=${bytesToHex(nc)}`, { cache: "no-store" });
+    const res = await transport.send("GET", `/hello?p=${bytesToHex(p)}&nc=${bytesToHex(nc)}`, [], new Uint8Array());
     if (res.status === 404) throw new Gone();
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const v = await res.json();
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    const v = JSON.parse(new TextDecoder().decode(res.body));
     const hex32 = /^[0-9a-f]{32}$/;
     if (!hex32.test(v?.sid) || !hex32.test(v?.ns) || typeof v?.name !== "string") {
       throw new Error("bad hello");
     }
     const ns = hexToBytes(v.ns);
-    return new Session(hexToBytes(v.sid), deriveKey(k, ns, nc), v.name);
+    return new Session(hexToBytes(v.sid), deriveKey(k, ns, nc), v.name, transport);
   }
 
   /** One sealed POST, JSON reply. */
@@ -74,20 +86,18 @@ class Session {
   async request(target: string, body: Uint8Array = new Uint8Array(), signal?: AbortSignal): Promise<Uint8Array> {
     const ctr = ++this.ctr;
     const route = `POST ${target}`;
-    const res = await fetch(target, {
-      method: "POST",
-      headers: { "X-Yon-Sid": bytesToHex(this.sid), "X-Yon-Ctr": ctr.toString() },
-      body: seal(this.key, PHONE_TO_COMPUTER, ctr, route, this.sid, body) as Uint8Array<ArrayBuffer>,
-      cache: "no-store",
-      signal,
-    });
+    const headers: [string, string][] = [
+      ["X-Yon-Sid", bytesToHex(this.sid)],
+      ["X-Yon-Ctr", ctr.toString()],
+    ];
+    const sealedBody = seal(this.key, PHONE_TO_COMPUTER, ctr, route, this.sid, body);
+    const res = await this.transport.send("POST", target, headers, sealedBody, signal);
     if (res.status === 404) throw new Gone();
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const out = BigInt(res.headers.get("X-Yon-Ctr") ?? "0");
+    if (res.status !== 200) throw new Error(`HTTP ${res.status}`);
+    const out = BigInt(res.header("X-Yon-Ctr") ?? "0");
     // Replies to parallel requests may arrive out of order; each only once.
     if (!this.replies.isFresh(out)) throw new Error("stale reply");
-    const sealed = new Uint8Array(await res.arrayBuffer());
-    const plain = open(this.key, COMPUTER_TO_PHONE, out, route, this.sid, sealed);
+    const plain = open(this.key, COMPUTER_TO_PHONE, out, route, this.sid, res.body);
     this.replies.mark(out);
     return plain;
   }
@@ -166,7 +176,7 @@ function whenVisible(): Promise<void> {
 
 // ---- Sending ----
 
-let pairing: { p: Uint8Array; k: Uint8Array } | null = null;
+let pairing: Pairing | null = null;
 let computer = "your computer";
 let current: { session: Session; cancelled: boolean } | null = null;
 
@@ -198,7 +208,7 @@ async function send(files: File[], to?: Target) {
 
   let job: { session: Session; cancelled: boolean } | null = null;
   try {
-    const session = await Session.start(pairing.p, pairing.k);
+    const session = await Session.start(pairing);
     job = current = { session, cancelled: false };
     computer = session.computer;
 
@@ -326,7 +336,7 @@ function isOffer(o: unknown): o is Offer {
 }
 
 async function listenerSession(): Promise<Session> {
-  if (!listener) listener = await Session.start(pairing!.p, pairing!.k);
+  if (!listener) listener = await Session.start(pairing!);
   return listener;
 }
 
