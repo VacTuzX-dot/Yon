@@ -5178,6 +5178,7 @@ name = "yon"
 version = "0.1.1"
 dependencies = [
  "gethostname",
+ "httparse",
  "libc",
  "mdns-sd",
  "rcgen",
