@@ -307,30 +307,35 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         pending,
         next_id: AtomicU64::new(1),
     };
-    tauri::async_runtime::block_on(state.restart_listener())?;
+    let port = state.settings.lock().expect("lock").port;
+    tauri::async_runtime::block_on(state.switch_listener(port))?;
+    state.advertise()?;
     Ok(state)
 }
 
 impl AppState {
     /// (Re)bind the listener on the configured port and re-advertise.
     /// Running transfers keep their own sockets and are unaffected.
-    async fn restart_listener(&self) -> Result<(), String> {
-        let (want, name) = {
-            let s = self.settings.lock().expect("lock");
-            (s.port, s.device_name.clone())
-        };
-        if let Some((task, _)) = self.listener.lock().expect("lock").take() {
-            task.abort();
-        }
-        let listener = server::bind(want)
+    /// Bind `port` (falling back to a free one) and swap it in. The old
+    /// listener keeps serving until the new one is bound, so a failed bind
+    /// leaves the receiver online. Running transfers keep their own sockets.
+    async fn switch_listener(&self, port: u16) -> Result<u16, String> {
+        let listener = server::bind(port)
             .await
-            .map_err(|e| format!("cannot listen: {e}"))?;
-        let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+            .map_err(|e| format!("Can't listen on port {port}: {e}"))?;
+        let actual = listener.local_addr().map_err(|e| e.to_string())?.port();
         let task = tauri::async_runtime::spawn(self.receiver.clone().serve(listener));
-        *self.listener.lock().expect("lock") = Some((task, port));
+        if let Some((old, _)) = self.listener.lock().expect("lock").replace((task, actual)) {
+            old.abort();
+        }
+        Ok(actual)
+    }
+
+    fn advertise(&self) -> Result<(), String> {
         if let Some(d) = &self.discovery {
-            d.advertise(&name, port)
-                .map_err(|e| format!("cannot advertise: {e}"))?;
+            let name = self.settings.lock().expect("lock").device_name.clone();
+            d.advertise(&name, self.port())
+                .map_err(|e| format!("Couldn't announce this device: {e}"))?;
         }
         Ok(())
     }
@@ -569,24 +574,20 @@ pub async fn update_settings(
 ) -> Result<StateDto, String> {
     let name = settings::validate_name(&device_name)?;
     let port = settings::validate_port(port)?;
-    let changed_port = {
+    let old_port = state.settings.lock().expect("lock").port;
+    // WHY: bind first, persist after. If the new port can't be bound we
+    // return before touching config or the running listener.
+    if port != old_port {
+        state.switch_listener(port).await?;
+    }
+    {
         let mut s = state.settings.lock().expect("lock");
-        let changed = s.port != port;
         s.device_name = name;
         s.port = port;
         s.save(&state.data_dir)
-            .map_err(|e| format!("Could not save settings: {e}"))?;
-        changed
-    };
-    if changed_port {
-        state.restart_listener().await?;
-    } else if let Some(d) = &state.discovery {
-        d.advertise(
-            &state.settings.lock().expect("lock").device_name,
-            state.port(),
-        )
-        .map_err(|e| format!("cannot advertise: {e}"))?;
+            .map_err(|e| format!("Applied, but couldn't save settings: {e}"))?;
     }
+    state.advertise()?;
     Ok(get_state(state))
 }
 
