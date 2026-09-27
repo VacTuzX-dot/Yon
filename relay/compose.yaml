@@ -1,0 +1,18 @@
+# Run on the relay host (e.g. meox) behind Cloudflare:
+#   docker compose up -d --build
+# Point a Cloudflare Tunnel (or reverse proxy with TLS) at http://localhost:8787,
+# then use wss://<your relay host> as the relay address in Yon's Settings.
+services:
+  yon-relay:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      # Only safe because the port is bound to 127.0.0.1 and reached through
+      # Cloudflare; otherwise clients could fake CF-Connecting-IP.
+      TRUST_CLOUDFLARE: "1"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m

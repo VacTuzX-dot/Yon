@@ -51,6 +51,8 @@ export interface Pairing {
   phone_id: string;
   qr: Qr;
   fallback: Qr | null;
+  /** qr works on any network (relay); fallback is the home Wi-Fi link. */
+  anywhere: boolean;
   settings: Settings;
 }
 

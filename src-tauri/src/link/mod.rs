@@ -1060,6 +1060,20 @@ pub fn pairing_url(host: &str, phone: &Phone) -> String {
     )
 }
 
+/// Where the phone page is published for use through the relay (ADR-003).
+pub const PAGE_URL: &str = "https://vactuzx-dot.github.io/Yon/";
+
+/// Pairing URL for the relay page: works on any network. `relay_url` is the
+/// wss:// address from settings; the page gets its host after the `@`.
+pub fn anywhere_url(phone: &Phone, room: &str, relay_url: &str) -> String {
+    let host = relay_url.split("://").nth(1).unwrap_or(relay_url);
+    format!(
+        "{PAGE_URL}#{}.{}.{room}@{host}",
+        hex(&phone.id),
+        hex(&phone.key)
+    )
+}
+
 /// This computer's LAN address as other devices see it, for the IP fallback
 /// link (some Android phones can't resolve `.local`). A UDP "connect" only
 /// picks the route; no packet is sent.
@@ -1120,6 +1134,20 @@ mod tests {
     fn phone_fingerprint_is_stable_and_distinct() {
         assert_eq!(phone_fingerprint(&[1; 16]), phone_fingerprint(&[1; 16]));
         assert_ne!(phone_fingerprint(&[1; 16]), phone_fingerprint(&[2; 16]));
+    }
+
+    #[test]
+    fn anywhere_url_carries_room_and_relay_host_in_the_fragment() {
+        let phone = Phone {
+            id: [1; 16],
+            key: [2; 32],
+            name: "p".into(),
+        };
+        let url = anywhere_url(&phone, &"ab".repeat(32), "wss://relay.example.com");
+        let (page, fragment) = url.split_once('#').unwrap();
+        assert_eq!(page, PAGE_URL);
+        assert!(fragment.ends_with(&format!(".{}@relay.example.com", "ab".repeat(32))));
+        assert!(qr_svg_path(&url).is_some(), "fits a QR");
     }
 
     #[test]

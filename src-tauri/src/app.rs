@@ -125,10 +125,13 @@ impl QrDto {
 #[derive(Serialize)]
 pub struct PairDto {
     phone_id: String,
-    /// `yon-….local` address: keeps working when the computer's IP changes.
+    /// "Reach from anywhere" on: the relay page link. Otherwise the
+    /// `yon-….local` address (keeps working when the computer's IP changes).
     qr: QrDto,
-    /// Same link by IP, for phones that can't resolve `.local`.
+    /// Anywhere on: the LAN link (fastest at home). Otherwise the same link by
+    /// IP, for phones that can't resolve `.local`.
     fallback: Option<QrDto>,
+    anywhere: bool,
     settings: SettingsDto,
 }
 
@@ -952,15 +955,34 @@ pub async fn pair_phone(state: State<'_, AppState>, name: String) -> Result<Pair
     }
     state.sync_link().await;
     let phone = Phone { id, key, name };
-    let qr = QrDto::new(link::pairing_url(&state.link_host(), &phone))?;
-    let fallback = match link::lan_ipv4() {
-        Some(ip) => Some(QrDto::new(link::pairing_url(&ip.to_string(), &phone))?),
-        None => None,
+    let lan = link::pairing_url(&state.link_host(), &phone);
+    let anywhere = {
+        let s = state.settings.lock().expect("lock");
+        let secret = unhex::<32>(&s.room_secret);
+        match secret {
+            Some(secret) if s.remote && !s.relay_url.is_empty() => Some(link::anywhere_url(
+                &phone,
+                &remote::room_id(&secret),
+                &s.relay_url,
+            )),
+            _ => None,
+        }
+    };
+    let (qr, fallback) = match &anywhere {
+        Some(url) => (QrDto::new(url.clone())?, Some(QrDto::new(lan)?)),
+        None => (
+            QrDto::new(lan)?,
+            match link::lan_ipv4() {
+                Some(ip) => Some(QrDto::new(link::pairing_url(&ip.to_string(), &phone))?),
+                None => None,
+            },
+        ),
     };
     Ok(PairDto {
         phone_id: hex(&id),
         qr,
         fallback,
+        anywhere: anywhere.is_some(),
         settings: state.settings_dto(),
     })
 }

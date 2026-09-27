@@ -16,7 +16,9 @@ const CONNECTED_MS = 2500;
 export default function PairPhoneSheet({ online, onPaired, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("My phone");
-  const [qr, setQr] = useState<{ id: string; main: Qr; fallback: Qr | null } | null>(null);
+  const [qr, setQr] = useState<{ id: string; main: Qr; fallback: Qr | null; anywhere: boolean } | null>(
+    null,
+  );
   const [useIp, setUseIp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,7 +37,7 @@ export default function PairPhoneSheet({ online, onPaired, onClose }: Props) {
     setBusy(true);
     try {
       const p = await api.pairPhone(name);
-      setQr({ id: p.phone_id, main: p.qr, fallback: p.fallback });
+      setQr({ id: p.phone_id, main: p.qr, fallback: p.fallback, anywhere: p.anywhere });
       onPaired(p.settings);
     } catch (err) {
       setError(errorText(err));
@@ -111,13 +113,21 @@ export default function PairPhoneSheet({ online, onPaired, onClose }: Props) {
           </ol>
           {qr.fallback && (
             <button type="button" className="link" onClick={() => setUseIp(!useIp)}>
-              {useIp ? "Use the normal code" : "Link doesn't open? Try this code instead"}
+              {useIp
+                ? "Use the normal code"
+                : qr.anywhere
+                  ? "Only use it at home? Faster Wi-Fi-only code"
+                  : "Link doesn't open? Try this code instead"}
             </button>
           )}
           <p className="hint">
             {useIp
-              ? "This code uses the computer's current IP address, so it may stop working when your Wi-Fi changes it."
-              : "Anyone who scans this code can ask to send you files. Remove the phone in Settings to stop it."}
+              ? qr.anywhere
+                ? "This code works only on this Wi-Fi, without the relay."
+                : "This code uses the computer's current IP address, so it may stop working when your Wi-Fi changes it."
+              : qr.anywhere
+                ? "Works on any network through the relay. Anyone who scans it can ask to send you files; remove the phone in Settings to stop it."
+                : "Anyone who scans this code can ask to send you files. Remove the phone in Settings to stop it."}
           </p>
           <div className="actions">
             <button type="button" className="primary" onClick={onClose}>

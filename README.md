@@ -56,6 +56,8 @@ From then on, tap the Yon icon on your phone:
 
 You only scan once. If the link doesn't open (some Android phones can't use `.local` names), tap "Link doesn't open?" under the QR code for a code that uses the computer's IP address instead.
 
+**From anywhere (optional).** Turn on **Settings → Phones → Reach from anywhere** and enter a relay address, then pair the phone again: the new code opens the phone page from GitHub Pages and reaches this computer through the relay, on any network. The relay only passes on encrypted data and stores nothing; it does see which devices talk and how much. Run your own: `relay/` has a Dockerfile and `compose.yaml` (put it behind Cloudflare or another TLS proxy and use its `wss://` address). Phones paired before turning this on keep their home-Wi-Fi link until you pair them again.
+
 Keep the phone's screen on while a big file is sending or arriving. If the phone locks, the transfer continues from where it stopped when you come back, as long as it's within about 5 minutes.
 
 ### Verify the download
@@ -172,8 +174,9 @@ src-tauri/src/
   sanitize.rs        file name cleaning
   settings.rs        settings file
   platform.rs        OS-specific helpers
-  link/              Yon Link: phone web page server, HTTP framing, session crypto
-web/                 phone page (vanilla TS, built by scripts/build-link.ts)
+  link/              Yon Link: phone web page server, HTTP framing, session crypto, relay client
+web/                 phone page (vanilla TS, built by scripts/build-link.ts for the LAN and for GitHub Pages)
+relay/               Yon Link relay for "Reach from anywhere" (Bun, no dependencies; Dockerfile, compose.yaml)
 src-tauri/macos/     "Share → Yon" extension (Swift, built by build-share.sh)
 src-tauri/windows/   installer hooks (Send To shortcut)
 src-tauri/tests/     end-to-end tests: transfers over TLS, a fake phone over Yon Link
