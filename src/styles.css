@@ -724,3 +724,24 @@ details .field {
 .folder .hint {
   flex: 1;
 }
+
+.paired {
+  align-items: center;
+  text-align: center;
+}
+
+.paired .actions {
+  align-self: stretch;
+}
+
+.paired-check {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--ok);
+  color: var(--surface);
+  font-size: 28px;
+  font-weight: 700;
+}

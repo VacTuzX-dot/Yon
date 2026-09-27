@@ -3,19 +3,31 @@ import { api, errorText, type Qr, type Settings } from "../api";
 import { LogoShapes } from "./Logo";
 
 interface Props {
+  /** Phones whose Yon page is open (ids); tells us the scan worked. */
+  online: string[];
   onPaired: (s: Settings) => void;
   onClose: () => void;
 }
 
+/** How long "Paired" stays up before the sheet closes itself. */
+const CONNECTED_MS = 2500;
+
 /** Pair a phone for Yon Link: name it, then scan the QR once. */
-export default function PairPhoneSheet({ onPaired, onClose }: Props) {
+export default function PairPhoneSheet({ online, onPaired, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState("My phone");
-  const [qr, setQr] = useState<{ main: Qr; fallback: Qr | null } | null>(null);
+  const [qr, setQr] = useState<{ id: string; main: Qr; fallback: Qr | null } | null>(null);
   const [useIp, setUseIp] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   useEffect(() => ref.current?.showModal(), []);
+  // The phone opened its Yon page: pairing worked, so the code can go.
+  const connected = qr !== null && online.includes(qr.id);
+  useEffect(() => {
+    if (!connected) return;
+    const t = window.setTimeout(onClose, CONNECTED_MS);
+    return () => window.clearTimeout(t);
+  }, [connected, onClose]);
 
   async function pair(e: FormEvent) {
     e.preventDefault();
@@ -23,7 +35,7 @@ export default function PairPhoneSheet({ onPaired, onClose }: Props) {
     setBusy(true);
     try {
       const p = await api.pairPhone(name);
-      setQr({ main: p.qr, fallback: p.fallback });
+      setQr({ id: p.phone_id, main: p.qr, fallback: p.fallback });
       onPaired(p.settings);
     } catch (err) {
       setError(errorText(err));
@@ -44,7 +56,22 @@ export default function PairPhoneSheet({ onPaired, onClose }: Props) {
         onClose();
       }}
     >
-      {!shown ? (
+      {connected ? (
+        <div className="pair paired" role="status">
+          <span className="paired-check" aria-hidden>
+            ✓
+          </span>
+          <h2 id="pair-title">{name} is paired</h2>
+          <p className="hint">
+            Send from the phone with the Yon icon, or pick it in Yon to send files to it.
+          </p>
+          <div className="actions">
+            <button type="button" className="primary" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : !shown ? (
         <form onSubmit={pair}>
           <h2 id="pair-title">Pair a phone</h2>
           <p className="hint">

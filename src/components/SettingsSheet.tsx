@@ -256,6 +256,7 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
       </form>
       {pairing && (
         <PairPhoneSheet
+          online={state.online_phones}
           onPaired={(settings) => onChange({ ...state, settings })}
           onClose={() => setPairing(false)}
         />
