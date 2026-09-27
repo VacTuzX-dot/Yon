@@ -1,14 +1,15 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { formatBytes, type Incoming } from "../api";
 import { initials } from "./DeviceOrbit";
 
 interface Props {
   request: Incoming;
-  onAnswer: (accept: boolean) => void;
+  onAnswer: (accept: boolean, trust: boolean) => void;
 }
 
 export default function IncomingDialog({ request, onAnswer }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [trust, setTrust] = useState(false);
   useEffect(() => ref.current?.showModal(), []);
   const n = request.files.length;
 
@@ -20,7 +21,7 @@ export default function IncomingDialog({ request, onAnswer }: Props) {
       // Esc = decline, never a silent accept.
       onCancel={(e) => {
         e.preventDefault();
-        onAnswer(false);
+        onAnswer(false, false);
       }}
     >
       <div className="sender">
@@ -51,11 +52,18 @@ export default function IncomingDialog({ request, onAnswer }: Props) {
         Device code <span className="code">{request.short_fingerprint}</span>. Not sure it's
         them? Ask them to open Settings in Yon and compare.
       </p>
+      <label className="toggle">
+        <input type="checkbox" checked={trust} onChange={(e) => setTrust(e.target.checked)} />
+        <span>
+          Always accept from this device
+          <span className="hint">Only this device code. You can remove it in Settings.</span>
+        </span>
+      </label>
       <div className="actions">
-        <button type="button" className="quiet" onClick={() => onAnswer(false)}>
+        <button type="button" className="quiet" onClick={() => onAnswer(false, false)}>
           Decline
         </button>
-        <button type="button" className="primary" onClick={() => onAnswer(true)}>
+        <button type="button" className="primary" onClick={() => onAnswer(true, trust)}>
           Accept
         </button>
       </div>

@@ -54,6 +54,9 @@ export default function App() {
     const subs = [
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
       on("incoming", (req) => setIncoming(req)),
+      on("recv-started", (r) =>
+        setReceiving((list) => [...list, { id: r.id, from: r.sender_name, done: 0, total: r.total }]),
+      ),
       on("recv-progress", (p) =>
         setReceiving((list) =>
           list.map((r) => (r.id === p.id ? { ...r, done: p.done, total: p.total } : r)),
@@ -123,9 +126,9 @@ export default function App() {
   }, [confirm]);
 
   const answer = useCallback(
-    (accept: boolean) => {
+    (accept: boolean, trust: boolean) => {
       if (!incoming) return;
-      api.respond(incoming.id, accept);
+      api.respond(incoming.id, accept, trust).catch((e) => setError(errorText(e)));
       if (accept) {
         setReceiving((list) => [
           ...list,

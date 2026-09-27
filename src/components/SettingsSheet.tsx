@@ -35,6 +35,16 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
     }
   }
 
+  async function forget(id: string) {
+    setError(null);
+    try {
+      const settings = await api.untrust(id);
+      onChange({ ...state, settings });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
   async function changeFolder() {
     setError(null);
     try {
@@ -85,6 +95,25 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
             </span>
           </label>
         )}
+        <div className="field">
+          <span>Accept automatically from</span>
+          {state.settings.trusted.length === 0 ? (
+            <p className="hint">
+              No devices yet. Tick "Always accept from this device" when someone sends you files.
+            </p>
+          ) : (
+            <ul className="trusted">
+              {state.settings.trusted.map((t) => (
+                <li key={t.id}>
+                  <span className="file-name">{t.name}</span>
+                  <button type="button" className="link" onClick={() => forget(t.id)}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
         <details>
           <summary>Advanced</summary>
           <label className="field">

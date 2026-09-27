@@ -17,6 +17,7 @@ export interface Settings {
   save_dir: string;
   port: number;
   close_to_tray: boolean;
+  trusted: { id: string; name: string }[];
 }
 
 export interface AppState {
@@ -89,7 +90,9 @@ export const api = {
   send: (selectionId: number, deviceId: string) =>
     invoke<number>("send", { selectionId, deviceId }),
   cancelSend: (id: number) => invoke<void>("cancel_send", { id }),
-  respond: (id: number, accept: boolean) => invoke<void>("respond", { id, accept }),
+  respond: (id: number, accept: boolean, trust = false) =>
+    invoke<void>("respond", { id, accept, trust }),
+  untrust: (id: string) => invoke<Settings>("untrust", { id }),
   cancelReceive: (id: number) => invoke<void>("cancel_receive", { id }),
   reveal: (id: number) => invoke<void>("reveal", { id }),
   updateSettings: (deviceName: string, port: number) =>
@@ -101,6 +104,7 @@ export const api = {
 export interface Events {
   devices: Device[];
   incoming: Incoming;
+  "recv-started": { id: number; sender_name: string; total: number };
   "recv-progress": Progress;
   "recv-finished": RecvFinished;
   "send-status": { id: number; status: SendStatus };

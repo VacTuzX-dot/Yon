@@ -34,7 +34,7 @@ pub struct AppState {
     selections: Mutex<HashMap<u64, Vec<OutFile>>>,
     outgoing: Mutex<HashMap<u64, Arc<Notify>>>,
     received: Arc<Mutex<HashMap<u64, Vec<PathBuf>>>>,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Decision>>>>,
+    pending: Arc<Mutex<HashMap<u64, Pending>>>,
     next_id: AtomicU64,
 }
 
@@ -62,6 +62,7 @@ pub struct SettingsDto {
     save_dir: String,
     port: u16,
     close_to_tray: bool,
+    trusted: Vec<settings::TrustedDevice>,
 }
 
 #[derive(Serialize)]
@@ -84,6 +85,13 @@ struct IncomingDto {
     sender_os: String,
     short_fingerprint: String,
     files: Vec<server::IncomingFile>,
+    total: u64,
+}
+
+#[derive(Serialize, Clone)]
+struct RecvStartedDto {
+    id: u64,
+    sender_name: String,
     total: u64,
 }
 
@@ -117,16 +125,54 @@ struct SendFinishedDto {
 
 // ---------- Receiver UI bridge ----------
 
+/// A request waiting for the user, plus who sent it (for "always accept").
+struct Pending {
+    tx: oneshot::Sender<Decision>,
+    fingerprint: crate::identity::Fingerprint,
+    name: String,
+}
+
 struct TauriUi {
     app: AppHandle,
-    pending: Arc<Mutex<HashMap<u64, oneshot::Sender<Decision>>>>,
+    pending: Arc<Mutex<HashMap<u64, Pending>>>,
     received: Arc<Mutex<HashMap<u64, Vec<PathBuf>>>>,
 }
 
 impl ReceiverUi for TauriUi {
     fn ask(&self, req: IncomingRequest) -> oneshot::Receiver<Decision> {
         let (tx, rx) = oneshot::channel();
-        self.pending.lock().expect("lock").insert(req.id, tx);
+        // Trusted = the key proven in this TLS handshake is on the user's list.
+        let trusted = self
+            .app
+            .try_state::<AppState>()
+            .map(|s| {
+                s.settings
+                    .lock()
+                    .expect("lock")
+                    .is_trusted(&req.fingerprint)
+            })
+            .unwrap_or(false);
+        if trusted {
+            let _ = tx.send(Decision::Accept);
+            let dto = RecvStartedDto {
+                id: req.id,
+                sender_name: req.sender_name,
+                total: req.total,
+            };
+            let _ = self.app.emit("recv-started", dto);
+            if let Some(w) = self.app.get_webview_window("main") {
+                let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
+            }
+            return rx;
+        }
+        self.pending.lock().expect("lock").insert(
+            req.id,
+            Pending {
+                tx,
+                fingerprint: req.fingerprint,
+                name: req.sender_name.clone(),
+            },
+        );
         let dto = IncomingDto {
             id: req.id,
             sender_name: req.sender_name,
@@ -294,6 +340,7 @@ impl AppState {
             save_dir: s.save_dir.display().to_string(),
             port: s.port,
             close_to_tray: s.close_to_tray,
+            trusted: s.trusted.clone(),
         }
     }
 
@@ -449,14 +496,40 @@ pub fn cancel_send(state: State<'_, AppState>, id: u64) {
 }
 
 #[tauri::command]
-pub fn respond(state: State<'_, AppState>, id: u64, accept: bool) {
-    if let Some(tx) = state.pending.lock().expect("lock").remove(&id) {
-        let _ = tx.send(if accept {
-            Decision::Accept
-        } else {
-            Decision::Decline
-        });
+pub fn respond(
+    state: State<'_, AppState>,
+    id: u64,
+    accept: bool,
+    trust: bool,
+) -> Result<(), String> {
+    let Some(p) = state.pending.lock().expect("lock").remove(&id) else {
+        return Ok(());
+    };
+    // WHY: the fingerprint comes from our own state (the handshake), never
+    // from the webview — the UI can only say "trust whoever sent request id".
+    if accept && trust {
+        let mut s = state.settings.lock().expect("lock");
+        s.trust(&p.fingerprint, &p.name);
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
     }
+    let _ = p.tx.send(if accept {
+        Decision::Accept
+    } else {
+        Decision::Decline
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn untrust(state: State<'_, AppState>, id: String) -> Result<SettingsDto, String> {
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.untrust(&id);
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    Ok(state.settings_dto())
 }
 
 #[tauri::command]

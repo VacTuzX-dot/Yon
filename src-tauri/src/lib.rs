@@ -72,6 +72,7 @@ pub fn run() {
             app::update_settings,
             app::pick_save_dir,
             app::set_close_to_tray,
+            app::untrust,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

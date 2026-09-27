@@ -38,12 +38,12 @@ The builds are not code-signed yet, so your OS will warn you the first time.
 
 - Every install has its own Ed25519 key. Connections use mutual TLS 1.3, and the sender checks it is talking to the exact device it discovered.
 - The receiver sees the sender's **device code** (for example `A1B2-C3D4-E5F6-0718`). Device names can be faked; if you're unsure, ask the sender to open Settings in Yon and compare codes.
-- Nothing is written until you accept. File names are cleaned so they can't escape the save folder or collide with system names.
+- Nothing is written until you accept — unless you ticked "Always accept from this device" for that sender. That list is matched by device code (the key proven in the connection), not by name, and you can remove devices in Settings. File names are cleaned so they can't escape the save folder or collide with system names.
 - Received files are marked as downloaded (macOS quarantine / Windows Mark-of-the-Web), so the OS still checks them when opened.
 - Yon only accepts connections from private network addresses.
 - While Yon is running (including in the menu bar / tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
 
-Known limits of this version: IPv4 only, the key is stored as a file in the app's data folder (not in the system keychain), and there is no "trusted devices only" mode yet.
+Known limits of this version: IPv4 only, the key is stored as a file in the app's data folder (not in the system keychain), and there is no mode that ignores unknown devices entirely yet.
 
 ## Development
 

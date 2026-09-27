@@ -1,6 +1,7 @@
 //! User settings persisted as JSON in the app data dir.
 
-use crate::protocol::MAX_DEVICE_NAME_BYTES;
+use crate::identity::{parse_fingerprint, Fingerprint};
+use crate::protocol::{hex, MAX_DEVICE_NAME_BYTES};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io;
@@ -17,7 +18,21 @@ pub struct Settings {
     /// macOS, where closing always hides. Missing in old files → true.
     #[serde(default = "default_true")]
     pub close_to_tray: bool,
+    /// Devices whose transfers are accepted without asking. Matched by the
+    /// key fingerprint proven in the TLS handshake — never by name.
+    #[serde(default)]
+    pub trusted: Vec<TrustedDevice>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrustedDevice {
+    /// Full SHA-256 fingerprint, lowercase hex.
+    pub id: String,
+    /// Name when last seen; display only.
+    pub name: String,
+}
+
+const MAX_TRUSTED: usize = 100;
 
 fn default_true() -> bool {
     true
@@ -30,6 +45,7 @@ impl Settings {
             save_dir: downloads.join("Yon"),
             port: crate::server::DEFAULT_PORT,
             close_to_tray: true,
+            trusted: Vec::new(),
         }
     }
 
@@ -49,6 +65,9 @@ impl Settings {
                 if !s.save_dir.is_absolute() {
                     s.save_dir = defaults.save_dir;
                 }
+                // A hand-edited or corrupt entry must not match anything.
+                s.trusted.retain(|t| parse_fingerprint(&t.id).is_some());
+                s.trusted.truncate(MAX_TRUSTED);
                 s
             }
             Err(e) => {
@@ -56,6 +75,26 @@ impl Settings {
                 defaults
             }
         }
+    }
+
+    pub fn is_trusted(&self, fp: &Fingerprint) -> bool {
+        let id = hex(fp);
+        self.trusted.iter().any(|t| t.id == id)
+    }
+
+    /// Add (or refresh the name of) a trusted device.
+    pub fn trust(&mut self, fp: &Fingerprint, name: &str) {
+        let id = hex(fp);
+        let name = validate_name(name).unwrap_or_else(|_| "Unknown device".into());
+        if let Some(t) = self.trusted.iter_mut().find(|t| t.id == id) {
+            t.name = name;
+        } else if self.trusted.len() < MAX_TRUSTED {
+            self.trusted.push(TrustedDevice { id, name });
+        }
+    }
+
+    pub fn untrust(&mut self, id: &str) {
+        self.trusted.retain(|t| t.id != id);
     }
 
     /// Write atomically (temp file + rename) so a crash can't leave half a file.
@@ -108,6 +147,10 @@ mod tests {
             save_dir: dir.join("y"),
             port: 60000,
             close_to_tray: false,
+            trusted: vec![TrustedDevice {
+                id: "ab".repeat(32),
+                name: "Desk".into(),
+            }],
         };
         s.save(&dir).unwrap();
         assert_eq!(Settings::load(&dir, dl), s);
@@ -142,6 +185,41 @@ mod tests {
         );
         fs::write(dir.join(FILE), json).unwrap();
         assert!(Settings::load(&dir, Path::new("/d")).close_to_tray);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn trust_is_by_fingerprint_and_survives_reload() {
+        let dir = temp_dir("settings-trust");
+        let dl = Path::new("/d");
+        let mut s = Settings::load(&dir, dl);
+        let (a, b) = ([1u8; 32], [2u8; 32]);
+        assert!(!s.is_trusted(&a));
+        s.trust(&a, "Leo's PC");
+        s.trust(&a, "Renamed PC");
+        assert!(s.is_trusted(&a) && !s.is_trusted(&b));
+        assert_eq!(s.trusted.len(), 1, "no duplicates");
+        assert_eq!(s.trusted[0].name, "Renamed PC");
+        s.save(&dir).unwrap();
+        assert!(Settings::load(&dir, dl).is_trusted(&a));
+        s.untrust(&hex(&a));
+        assert!(!s.is_trusted(&a));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_trusted_entries_are_dropped_on_load() {
+        let dir = temp_dir("settings-trust-bad");
+        let json = format!(
+            r#"{{"device_name":"X","save_dir":{},"port":53420,
+                "trusted":[{{"id":"not-hex","name":"evil"}},{{"id":"{}","name":"ok"}}]}}"#,
+            serde_json::to_string(&dir).unwrap(),
+            "cd".repeat(32)
+        );
+        fs::write(dir.join(FILE), json).unwrap();
+        let s = Settings::load(&dir, Path::new("/d"));
+        assert_eq!(s.trusted.len(), 1);
+        assert!(s.is_trusted(&[0xcd; 32]));
         fs::remove_dir_all(dir).unwrap();
     }
 
