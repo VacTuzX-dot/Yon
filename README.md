@@ -17,7 +17,7 @@ Yon is a small, open-source desktop app for sending files between computers on t
 - Progress on both sides, with Cancel on both sides.
 - Large files are streamed, so a 1 GB file uses a few MB of memory, and every file is checked with SHA-256 when it arrives.
 - Received files go to `Downloads/Yon` (you can change this). Existing files are never overwritten: you get `photo (1).jpg` instead.
-- Send from your file manager: on Windows, right-click → **Send to → Yon**; on macOS, right-click → **Open With → Yon** (or drop files on Yon's Dock icon). Yon asks which device to send to.
+- Send from your file manager: on Windows, right-click → **Send to → Yon**; on macOS, use **Share → Yon** (from Finder or any app), **Open With → Yon**, or drop files on Yon's Dock icon. Yon asks which device to send to.
 - Stays ready in the background: on macOS, closing the window (⌘W) keeps Yon in the menu bar; on Windows, closing sends it to the tray (turn this off in Settings). Quit from the menu bar / tray icon, or ⌘Q on macOS.
 
 ## Install
@@ -31,7 +31,7 @@ Download the latest build from [Releases](https://github.com/VacTuzX-dot/Yon/rel
 
 The builds are not code-signed yet, so your OS will warn you the first time.
 
-**macOS:** open the `.dmg`, drag Yon to Applications, then right-click Yon → **Open** → **Open**. You only need to do this once. When asked, allow Yon to find devices on your local network.
+**macOS:** open the `.dmg`, drag Yon to Applications, then right-click Yon → **Open** → **Open**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
 
 **Windows:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
 
@@ -123,6 +123,8 @@ src-tauri/src/
   sanitize.rs        file name cleaning
   settings.rs        settings file
   platform.rs        OS-specific helpers
+src-tauri/macos/     "Share → Yon" extension (Swift, built by build-share.sh)
+src-tauri/windows/   installer hooks (Send To shortcut)
 src-tauri/tests/     end-to-end transfer tests over TLS
 ```
 

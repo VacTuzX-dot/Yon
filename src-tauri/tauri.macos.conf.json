@@ -1,0 +1,13 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "beforeBundleCommand": "bash src-tauri/macos/build-share.sh"
+  },
+  "bundle": {
+    "macOS": {
+      "files": {
+        "PlugIns/YonShare.appex": "./target/yonshare/YonShare.appex"
+      }
+    }
+  }
+}
