@@ -55,3 +55,31 @@ export function open(
 ): Uint8Array {
   return chacha20poly1305(key, nonce(dir, counter), aad(route, sid, counter)).decrypt(sealed);
 }
+
+/**
+ * Anti-replay window, same rules as ReplayWindow in src-tauri/src/link/crypto.rs:
+ * each counter once, up to 64 out of order, 0 never valid. Check before
+ * opening, mark only after a message opened.
+ */
+export class ReplayWindow {
+  private max = 0n;
+  private seen = 0n;
+
+  isFresh(ctr: bigint): boolean {
+    if (ctr <= 0n) return false;
+    if (ctr > this.max) return true;
+    const age = this.max - ctr;
+    return age < 64n && ((this.seen >> age) & 1n) === 0n;
+  }
+
+  mark(ctr: bigint): void {
+    if (ctr > this.max) {
+      const shift = ctr - this.max;
+      this.seen = shift >= 64n ? 0n : (this.seen << shift) & 0xffff_ffff_ffff_ffffn;
+      this.seen |= 1n;
+      this.max = ctr;
+    } else {
+      this.seen |= 1n << (this.max - ctr);
+    }
+  }
+}

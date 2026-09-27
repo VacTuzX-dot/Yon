@@ -2,7 +2,7 @@
 // computer over sealed requests. Protocol: src-tauri/src/link/mod.rs.
 // Every text shown here goes through textContent, never innerHTML.
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
-import { COMPUTER_TO_PHONE, PHONE_TO_COMPUTER, deriveKey, open, seal } from "./crypto";
+import { COMPUTER_TO_PHONE, PHONE_TO_COMPUTER, ReplayWindow, deriveKey, open, seal } from "./crypto";
 
 type Reply = { result: string; reason?: string; file?: number; next?: number; chunk?: number };
 
@@ -31,7 +31,7 @@ function readPairing(): { p: Uint8Array; k: Uint8Array } | null {
 
 class Session {
   private ctr = 0n;
-  private lastOut = 0n;
+  private replies = new ReplayWindow();
   private inflight: AbortController | null = null;
 
   private constructor(
@@ -69,10 +69,11 @@ class Session {
     if (res.status === 404) throw new Gone();
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const out = BigInt(res.headers.get("X-Yon-Ctr") ?? "0");
-    if (out <= this.lastOut) throw new Error("stale reply");
+    // Replies to parallel requests may arrive out of order; each only once.
+    if (!this.replies.isFresh(out)) throw new Error("stale reply");
     const sealed = new Uint8Array(await res.arrayBuffer());
     const plain = open(this.key, COMPUTER_TO_PHONE, out, route, this.sid, sealed);
-    this.lastOut = out;
+    this.replies.mark(out);
     return JSON.parse(new TextDecoder().decode(plain));
   }
 

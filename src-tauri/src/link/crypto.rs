@@ -93,9 +93,70 @@ fn aad(route: &str, sid: &[u8; 16], counter: u64) -> Vec<u8> {
     a
 }
 
+/// Anti-replay window over message counters (as in IPsec/DTLS): each counter
+/// is accepted once, and up to 64 messages may arrive out of order, which
+/// happens when the phone runs requests in parallel. Counter 0 is never valid.
+/// Call `is_fresh` before opening and `mark` only after a message opened, so
+/// forged messages can't move the window.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct ReplayWindow {
+    max: u64,
+    /// Bit n set = counter `max - n` was seen.
+    seen: u64,
+}
+
+impl ReplayWindow {
+    const SIZE: u64 = 64;
+
+    pub fn is_fresh(&self, ctr: u64) -> bool {
+        if ctr == 0 {
+            return false;
+        }
+        if ctr > self.max {
+            return true;
+        }
+        let age = self.max - ctr;
+        age < Self::SIZE && self.seen & (1 << age) == 0
+    }
+
+    pub fn mark(&mut self, ctr: u64) {
+        if ctr > self.max {
+            let shift = ctr - self.max;
+            self.seen = if shift >= Self::SIZE {
+                0
+            } else {
+                self.seen << shift
+            };
+            self.seen |= 1;
+            self.max = ctr;
+        } else {
+            self.seen |= 1 << (self.max - ctr);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn replay_window_allows_reordering_but_never_twice() {
+        let mut w = ReplayWindow::default();
+        assert!(!w.is_fresh(0));
+        for c in [1, 3, 2, 10, 5] {
+            assert!(w.is_fresh(c), "{c} first time");
+            w.mark(c);
+            assert!(!w.is_fresh(c), "{c} replayed");
+        }
+        assert!(w.is_fresh(4) && w.is_fresh(9));
+        w.mark(80);
+        assert!(!w.is_fresh(10) && !w.is_fresh(16), "older than 64 behind 80");
+        assert!(w.is_fresh(17), "exactly 63 behind is still in the window");
+        w.mark(17);
+        assert!(!w.is_fresh(17));
+        w.mark(1000);
+        assert!(!w.is_fresh(80) && w.is_fresh(999));
+    }
     use crate::identity::parse_fingerprint;
     use crate::protocol::hex;
 

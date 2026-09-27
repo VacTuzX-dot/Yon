@@ -17,7 +17,7 @@ use crate::protocol::{hex, unhex, FileMeta, TransferRequest};
 use crate::server::{is_allowed_peer, Admission, Decision, Receiver, RecvOutcome, Refusal};
 use crate::transfer::Reserved;
 use crate::{platform, Throttle};
-use crypto::{Dir, SessionKey};
+use crypto::{Dir, ReplayWindow, SessionKey};
 use http::{read_request, write_response, HttpError, Request};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
@@ -100,7 +100,7 @@ struct Session {
     phone_name: String,
     ip: Ipv4Addr,
     key: SessionKey,
-    last_in: u64,
+    inbound: ReplayWindow,
     out: u64,
     last_seen: Instant,
     upload: Option<Upload>,
@@ -297,7 +297,7 @@ impl Link {
                 phone_name: phone.name.clone(),
                 ip,
                 key: SessionKey::derive(&phone.key, &ns, &nc),
-                last_in: 0,
+                inbound: ReplayWindow::default(),
                 out: 0,
                 last_seen: Instant::now(),
                 upload: None,
@@ -331,14 +331,14 @@ impl Link {
         let ctr: u64 = req.header("x-yon-ctr")?.parse().ok()?;
         let session = self.sessions.lock().expect("lock").get(&sid).cloned()?;
         let mut s = session.lock().await;
-        if ctr <= s.last_in || !self.phones.read().expect("lock").contains_key(&s.phone_id) {
+        if !s.inbound.is_fresh(ctr) || !self.phones.read().expect("lock").contains_key(&s.phone_id) {
             return None;
         }
         let route = format!("{} {}", req.method, req.target);
         let plain = s
             .key
             .open(Dir::PhoneToComputer, ctr, &route, &sid, &req.body)?;
-        s.last_in = ctr;
+        s.inbound.mark(ctr);
         s.last_seen = Instant::now();
         if s.ip != ip {
             s.ip = ip; // phone moved networks mid-session; keep going

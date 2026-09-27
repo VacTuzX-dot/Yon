@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import vectors from "./crypto-vectors.json";
-import { deriveKey, open, seal } from "./crypto";
+import { ReplayWindow, deriveKey, open, seal } from "./crypto";
 
 // Same vectors as src-tauri/src/link/crypto.rs: ring and noble must agree.
 for (const v of vectors) {
@@ -24,4 +24,23 @@ test("tampering is rejected", () => {
   const bad = sealed.slice();
   bad[0] ^= 1;
   expect(() => open(key, 1, 5n, "POST /chunk", sid, bad)).toThrow();
+});
+
+test("replay window matches the Rust rules", () => {
+  const w = new ReplayWindow();
+  expect(w.isFresh(0n)).toBe(false);
+  for (const c of [1n, 3n, 2n, 10n, 5n]) {
+    expect(w.isFresh(c)).toBe(true);
+    w.mark(c);
+    expect(w.isFresh(c)).toBe(false);
+  }
+  expect(w.isFresh(4n) && w.isFresh(9n)).toBe(true);
+  w.mark(80n);
+  expect(w.isFresh(10n) || w.isFresh(16n)).toBe(false);
+  expect(w.isFresh(17n)).toBe(true);
+  w.mark(17n);
+  expect(w.isFresh(17n)).toBe(false);
+  w.mark(1000n);
+  expect(w.isFresh(80n)).toBe(false);
+  expect(w.isFresh(999n)).toBe(true);
 });
