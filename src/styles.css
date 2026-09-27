@@ -653,3 +653,45 @@ details .field {
     gap: 20px 24px;
   }
 }
+
+/* ---------- pair a phone ---------- */
+
+.pair {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.pair h2 {
+  margin-bottom: 0;
+}
+
+.qr {
+  display: block;
+  width: min(260px, 70vw);
+  align-self: center;
+  border-radius: 12px;
+}
+
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pair .link {
+  align-self: flex-start;
+}
+
+.pair .hint {
+  margin-top: 0;
+}
+
+
+.pair-button {
+  align-self: flex-start;
+  margin-top: 4px;
+}

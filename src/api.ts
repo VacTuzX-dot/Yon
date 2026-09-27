@@ -19,6 +19,22 @@ export interface Settings {
   close_to_tray: boolean;
   show_in_dock: boolean;
   trusted: { id: string; name: string }[];
+  phones: { id: string; name: string; created: number }[];
+  /** Set when phones can't connect (Yon Link port busy). */
+  link_error: string | null;
+}
+
+export interface Qr {
+  url: string;
+  size: number;
+  path: string;
+}
+
+export interface Pairing {
+  phone_id: string;
+  qr: Qr;
+  fallback: Qr | null;
+  settings: Settings;
 }
 
 export interface AppState {
@@ -103,6 +119,8 @@ export const api = {
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),
   setCloseToTray: (enabled: boolean) => invoke<Settings>("set_close_to_tray", { enabled }),
   setShowInDock: (enabled: boolean) => invoke<Settings>("set_show_in_dock", { enabled }),
+  pairPhone: (name: string) => invoke<Pairing>("pair_phone", { name }),
+  unpairPhone: (id: string) => invoke<Settings>("unpair_phone", { id }),
 };
 
 export interface Events {

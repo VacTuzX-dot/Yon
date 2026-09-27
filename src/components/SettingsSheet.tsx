@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorText, isMac, type AppState } from "../api";
+import PairPhoneSheet from "./PairPhoneSheet";
 
 interface Props {
   state: AppState;
@@ -12,6 +13,7 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
   const [name, setName] = useState(state.settings.device_name);
   const [port, setPort] = useState(String(state.settings.port));
   const [error, setError] = useState<string | null>(null);
+  const [pairing, setPairing] = useState(false);
   useEffect(() => ref.current?.showModal(), []);
 
   async function save(e: FormEvent) {
@@ -49,6 +51,16 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
     setError(null);
     try {
       const settings = await api.untrust(id);
+      onChange({ ...state, settings });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function unpair(id: string) {
+    setError(null);
+    try {
+      const settings = await api.unpairPhone(id);
       onChange({ ...state, settings });
     } catch (err) {
       setError(errorText(err));
@@ -137,6 +149,27 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
             </ul>
           )}
         </div>
+        <div className="field">
+          <span>Phones</span>
+          {state.settings.phones.length === 0 ? (
+            <p className="hint">Send photos from your phone to this computer. No app needed.</p>
+          ) : (
+            <ul className="trusted">
+              {state.settings.phones.map((p) => (
+                <li key={p.id}>
+                  <span className="file-name">{p.name}</span>
+                  <button type="button" className="link" onClick={() => unpair(p.id)}>
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {state.settings.link_error && <p className="hint bad">{state.settings.link_error}</p>}
+          <button type="button" className="quiet pair-button" onClick={() => setPairing(true)}>
+            Pair a phone
+          </button>
+        </div>
         <details>
           <summary>Advanced</summary>
           <label className="field">
@@ -168,6 +201,12 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
           </button>
         </div>
       </form>
+      {pairing && (
+        <PairPhoneSheet
+          onPaired={(settings) => onChange({ ...state, settings })}
+          onClose={() => setPairing(false)}
+        />
+      )}
     </dialog>
   );
 }

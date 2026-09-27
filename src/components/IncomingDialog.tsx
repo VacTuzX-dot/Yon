@@ -48,15 +48,26 @@ export default function IncomingDialog({ request, onAnswer }: Props) {
           </li>
         ))}
       </ul>
-      <p className="hint">
-        Device code <span className="code">{request.short_fingerprint}</span>. Not sure it's
-        them? Ask them to open Settings in Yon and compare.
-      </p>
+      {request.sender_os === "web" ? (
+        <p className="hint">
+          <span className="tag">web link</span> Sent from a paired phone&apos;s browser. Less
+          protected than the Yon app: only accept files you expect.
+        </p>
+      ) : (
+        <p className="hint">
+          Device code <span className="code">{request.short_fingerprint}</span>. Not sure it&apos;s
+          them? Ask them to open Settings in Yon and compare.
+        </p>
+      )}
       <label className="toggle">
         <input type="checkbox" checked={trust} onChange={(e) => setTrust(e.target.checked)} />
         <span>
-          Always accept from this device
-          <span className="hint">Only this device code. You can remove it in Settings.</span>
+          Always accept from this {request.sender_os === "web" ? "phone" : "device"}
+          <span className="hint">
+            {request.sender_os === "web"
+              ? "Only this paired phone. You can remove it in Settings."
+              : "Only this device code. You can remove it in Settings."}
+          </span>
         </span>
       </label>
       <div className="actions">

@@ -94,6 +94,8 @@ pub fn run() {
             app::forget_received,
             app::take_shared,
             app::set_show_in_dock,
+            app::pair_phone,
+            app::unpair_phone,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

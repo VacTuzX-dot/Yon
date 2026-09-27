@@ -7,6 +7,8 @@
 use crate::client::{self, OutFile, SendOutcome, SendStatus, Target};
 use crate::discovery::{Device, Discovery};
 use crate::identity::{short_fingerprint, Identity};
+use crate::link::{self, Link, LinkLimits, Phone, LINK_PORT};
+use crate::protocol::{hex, unhex};
 use crate::server::{self, Decision, IncomingRequest, Limits, Receiver, ReceiverUi, RecvOutcome};
 use crate::settings::{self, Settings};
 use crate::{platform, transfer};
@@ -41,6 +43,11 @@ pub struct AppState {
     received: Arc<Mutex<HashMap<u64, Vec<PathBuf>>>>,
     pending: Arc<Mutex<HashMap<u64, Pending>>>,
     next_id: AtomicU64,
+    link: Arc<Link>,
+    /// Runs only while at least one phone is paired. Async lock: held across
+    /// the bind so two quick pairings can't both try to bind the port.
+    link_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
+    link_error: Mutex<Option<String>>,
 }
 
 // ---------- DTOs sent to the UI ----------
@@ -69,6 +76,42 @@ pub struct SettingsDto {
     close_to_tray: bool,
     show_in_dock: bool,
     trusted: Vec<settings::TrustedDevice>,
+    /// Never includes the pairing keys.
+    phones: Vec<PhoneDto>,
+    link_error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct PhoneDto {
+    id: String,
+    name: String,
+    created: u64,
+}
+
+#[derive(Serialize)]
+struct QrDto {
+    url: String,
+    /// Modules per side.
+    size: usize,
+    /// SVG path of the dark modules, one unit per module.
+    path: String,
+}
+
+impl QrDto {
+    fn new(url: String) -> Result<Self, String> {
+        let (size, path) = link::qr_svg_path(&url).ok_or("Couldn't make the QR code")?;
+        Ok(Self { url, size, path })
+    }
+}
+
+#[derive(Serialize)]
+pub struct PairDto {
+    phone_id: String,
+    /// `yon-….local` address: keeps working when the computer's IP changes.
+    qr: QrDto,
+    /// Same link by IP, for phones that can't resolve `.local`.
+    fallback: Option<QrDto>,
+    settings: SettingsDto,
 }
 
 #[derive(Serialize, Clone)]
@@ -278,6 +321,11 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
     });
     let save_dir = Arc::new(RwLock::new(settings.save_dir.clone()));
     let receiver = Receiver::new(identity.clone(), save_dir.clone(), ui, Limits::default());
+    let link = Link::new(
+        receiver.clone(),
+        settings.device_name.clone(),
+        LinkLimits::default(),
+    );
 
     let (discovery, discovery_error) = match Discovery::start(identity.id_hex()) {
         Ok(d) => (Some(d), None),
@@ -310,9 +358,13 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         received,
         pending,
         next_id: AtomicU64::new(1),
+        link,
+        link_task: tokio::sync::Mutex::new(None),
+        link_error: Mutex::new(None),
     };
     let port = state.settings.lock().expect("lock").port;
     tauri::async_runtime::block_on(state.switch_listener(port))?;
+    tauri::async_runtime::block_on(state.sync_link());
     state.advertise()?;
     Ok(state)
 }
@@ -333,6 +385,59 @@ impl AppState {
             old.abort();
         }
         Ok(actual)
+    }
+
+    /// Hand the paired phones to Link and run its listener only while there
+    /// are any. The port is fixed (saved phone links point at it), so a busy
+    /// port is reported in Settings instead of silently moving.
+    async fn sync_link(&self) {
+        let phones: Vec<Phone> = self
+            .settings
+            .lock()
+            .expect("lock")
+            .phones
+            .iter()
+            .filter_map(|p| {
+                Some(Phone {
+                    id: unhex::<16>(&p.id)?,
+                    key: unhex::<32>(&p.key)?,
+                    name: p.name.clone(),
+                })
+            })
+            .collect();
+        let want = !phones.is_empty();
+        self.link.set_phones(phones);
+        let mut task = self.link_task.lock().await;
+        if !want {
+            if let Some(t) = task.take() {
+                t.abort();
+            }
+            *self.link_error.lock().expect("lock") = None;
+            return;
+        }
+        if task.is_some() {
+            return;
+        }
+        let error = match Link::bind(LINK_PORT).await {
+            Ok(listener) => {
+                *task = Some(tauri::async_runtime::spawn(
+                    self.link.clone().serve(listener),
+                ));
+                None
+            }
+            Err(e) => {
+                eprintln!("[yon] link port {LINK_PORT} unavailable: {e}");
+                Some(format!(
+                    "Phones can't connect: port {LINK_PORT} is used by another program. Quit it, then quit and reopen Yon."
+                ))
+            }
+        };
+        *self.link_error.lock().expect("lock") = error;
+    }
+
+    /// The `.local` name mDNS announces for this computer (see discovery).
+    fn link_host(&self) -> String {
+        format!("yon-{}.local", &self.identity.id_hex()[..16])
     }
 
     fn advertise(&self) -> Result<(), String> {
@@ -362,6 +467,16 @@ impl AppState {
             close_to_tray: s.close_to_tray,
             show_in_dock: s.show_in_dock,
             trusted: s.trusted.clone(),
+            phones: s
+                .phones
+                .iter()
+                .map(|p| PhoneDto {
+                    id: p.id.clone(),
+                    name: p.name.clone(),
+                    created: p.created,
+                })
+                .collect(),
+            link_error: self.link_error.lock().expect("lock").clone(),
         }
     }
 
@@ -599,11 +714,12 @@ pub async fn update_settings(
     }
     {
         let mut s = state.settings.lock().expect("lock");
-        s.device_name = name;
+        s.device_name = name.clone();
         s.port = port;
         s.save(&state.data_dir)
             .map_err(|e| format!("Applied, but couldn't save settings: {e}"))?;
     }
+    state.link.set_computer_name(name);
     state.advertise()?;
     Ok(get_state(state))
 }
@@ -652,6 +768,64 @@ pub fn set_show_in_dock(
             .map_err(|e| format!("Could not save settings: {e}"))?;
     }
     apply_dock_visibility(&app, enabled);
+    Ok(state.settings_dto())
+}
+
+/// Pair a new phone: create its secret, start Link, and return the QR. The
+/// key leaves Rust only inside this one-time URL.
+#[tauri::command]
+pub async fn pair_phone(state: State<'_, AppState>, name: String) -> Result<PairDto, String> {
+    use ring::rand::{SecureRandom, SystemRandom};
+    let name = settings::validate_name(&name)?;
+    let (mut id, mut key) = ([0u8; 16], [0u8; 32]);
+    let rng = SystemRandom::new();
+    rng.fill(&mut id)
+        .and_then(|_| rng.fill(&mut key))
+        .map_err(|_| "Couldn't create a pairing key")?;
+    {
+        let mut s = state.settings.lock().expect("lock");
+        let created = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs());
+        if !s.add_phone(settings::PairedPhone {
+            id: hex(&id),
+            key: hex(&key),
+            name: name.clone(),
+            created,
+        }) {
+            return Err("Too many phones paired. Remove one first.".into());
+        }
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    state.sync_link().await;
+    let phone = Phone { id, key, name };
+    let qr = QrDto::new(link::pairing_url(&state.link_host(), &phone))?;
+    let fallback = match link::lan_ipv4() {
+        Some(ip) => Some(QrDto::new(link::pairing_url(&ip.to_string(), &phone))?),
+        None => None,
+    };
+    Ok(PairDto {
+        phone_id: hex(&id),
+        qr,
+        fallback,
+        settings: state.settings_dto(),
+    })
+}
+
+/// Forget a phone: its saved link stops working at once, and "always
+/// accept" for it is removed too.
+#[tauri::command]
+pub async fn unpair_phone(state: State<'_, AppState>, id: String) -> Result<SettingsDto, String> {
+    let pair = unhex::<16>(&id).ok_or("Unknown phone")?;
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.remove_phone(&id);
+        s.untrust(&hex(&link::phone_fingerprint(&pair)));
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    state.sync_link().await;
     Ok(state.settings_dto())
 }
 

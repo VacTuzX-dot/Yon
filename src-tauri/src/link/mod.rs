@@ -593,6 +593,52 @@ fn status(s: &Session) -> Value {
     }
 }
 
+/// Pairing URL. The secrets sit in the fragment, which browsers never send.
+pub fn pairing_url(host: &str, phone: &Phone) -> String {
+    format!(
+        "http://{host}:{LINK_PORT}/#{}.{}",
+        hex(&phone.id),
+        hex(&phone.key)
+    )
+}
+
+/// This computer's LAN address as other devices see it, for the IP fallback
+/// link (some Android phones can't resolve `.local`). A UDP "connect" only
+/// picks the route; no packet is sent.
+pub fn lan_ipv4() -> Option<Ipv4Addr> {
+    let sock = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    sock.connect((Ipv4Addr::new(192, 0, 2, 1), 9)).ok()?;
+    match sock.local_addr().ok()?.ip() {
+        std::net::IpAddr::V4(ip) if !ip.is_unspecified() && !ip.is_loopback() => Some(ip),
+        _ => None,
+    }
+}
+
+/// QR code for `data` at error correction level H (so a logo can cover the
+/// centre) as (modules per side, SVG path of the dark modules, one unit per
+/// module). Rendering as a path keeps the webview free of raw markup.
+pub fn qr_svg_path(data: &str) -> Option<(usize, String)> {
+    let code = qrcode::QrCode::with_error_correction_level(data, qrcode::EcLevel::H).ok()?;
+    let n = code.width();
+    let colors = code.to_colors();
+    let mut path = String::new();
+    for y in 0..n {
+        let mut x = 0;
+        while x < n {
+            if colors[y * n + x] == qrcode::Color::Dark {
+                let start = x;
+                while x < n && colors[y * n + x] == qrcode::Color::Dark {
+                    x += 1;
+                }
+                path.push_str(&format!("M{start} {y}h{}v1h-{}z", x - start, x - start));
+            } else {
+                x += 1;
+            }
+        }
+    }
+    Some((n, path))
+}
+
 fn not_found() -> (u16, &'static str, Vec<(&'static str, String)>, Vec<u8>) {
     (404, "text/plain", vec![], b"Not found".to_vec())
 }
@@ -613,5 +659,24 @@ mod tests {
     fn phone_fingerprint_is_stable_and_distinct() {
         assert_eq!(phone_fingerprint(&[1; 16]), phone_fingerprint(&[1; 16]));
         assert_ne!(phone_fingerprint(&[1; 16]), phone_fingerprint(&[2; 16]));
+    }
+
+    #[test]
+    fn pairing_url_keeps_secrets_in_fragment_and_fits_a_qr() {
+        let phone = Phone {
+            id: [0xab; 16],
+            key: [0xcd; 32],
+            name: "p".into(),
+        };
+        let url = pairing_url("yon-0123456789abcdef.local", &phone);
+        let (before, fragment) = url.split_once('#').unwrap();
+        assert_eq!(before, "http://yon-0123456789abcdef.local:53421/");
+        assert_eq!(fragment, format!("{}.{}", "ab".repeat(16), "cd".repeat(32)));
+        let (n, path) = qr_svg_path(&url).unwrap();
+        assert!((21..=77).contains(&n), "size {n}");
+        assert!(
+            path.starts_with("M0 0h7v1h-7z"),
+            "finder pattern first: {path:.20}"
+        );
     }
 }
