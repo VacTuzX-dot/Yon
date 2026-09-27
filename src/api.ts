@@ -95,6 +95,7 @@ export const api = {
   untrust: (id: string) => invoke<Settings>("untrust", { id }),
   cancelReceive: (id: number) => invoke<void>("cancel_receive", { id }),
   reveal: (id: number) => invoke<void>("reveal", { id }),
+  forgetReceived: (id: number) => invoke<void>("forget_received", { id }),
   updateSettings: (deviceName: string, port: number) =>
     invoke<AppState>("update_settings", { deviceName, port }),
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),

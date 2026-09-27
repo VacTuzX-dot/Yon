@@ -21,6 +21,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tokio::sync::{oneshot, Notify};
 
+/// Finished receives kept for "Show in Finder/Explorer".
+const MAX_REMEMBERED: usize = 50;
+
 pub struct AppState {
     identity: Arc<Identity>,
     data_dir: PathBuf,
@@ -213,7 +216,15 @@ impl ReceiverUi for TauriUi {
         };
         let names = saved.iter().map(|p| file_name(p)).collect();
         if !saved.is_empty() {
-            self.received.lock().expect("lock").insert(id, saved);
+            let mut received = self.received.lock().expect("lock");
+            received.insert(id, saved);
+            // Bounded even if the UI never dismisses: drop the oldest (ids
+            // only grow).
+            while received.len() > MAX_REMEMBERED {
+                if let Some(oldest) = received.keys().min().copied() {
+                    received.remove(&oldest);
+                }
+            }
         }
         let _ = self.app.emit(
             "recv-finished",
@@ -434,13 +445,6 @@ pub fn send(
     selection_id: u64,
     device_id: String,
 ) -> Result<u64, String> {
-    let files = state
-        .selections
-        .lock()
-        .expect("lock")
-        .get(&selection_id)
-        .cloned()
-        .ok_or("Selection expired — pick the files again")?;
     let device = state
         .devices
         .lock()
@@ -452,6 +456,14 @@ pub fn send(
     if !device.compatible {
         return Err("That device runs an incompatible Yon version — update both devices".into());
     }
+    // Checked the device first so a bad pick doesn't cost the user their
+    // selection; from here the transfer owns the file list.
+    let files = state
+        .selections
+        .lock()
+        .expect("lock")
+        .remove(&selection_id)
+        .ok_or("Selection expired — pick the files again")?;
     let id = state.id();
     let cancel = Arc::new(Notify::new());
     state
@@ -665,4 +677,10 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     builder.build(app)?;
     Ok(())
+}
+
+/// The user dismissed a finished receive; its paths are no longer needed.
+#[tauri::command]
+pub fn forget_received(state: State<'_, AppState>, id: u64) {
+    state.received.lock().expect("lock").remove(&id);
 }

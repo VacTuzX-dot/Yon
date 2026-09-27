@@ -51,9 +51,10 @@ impl Reserved {
                 Err(e) => return Err(e),
             }
         }
+        // Only the (sanitized) name, never the folder path, reaches the UI.
         Err(io::Error::new(
             io::ErrorKind::AlreadyExists,
-            "no free file name",
+            format!("no free file name for \"{name}\" (too many copies)"),
         ))
     }
 

@@ -47,7 +47,7 @@ export default function App() {
   const [incoming, setIncoming] = useState<Incoming | null>(null);
   const [outgoing, setOutgoing] = useState<Record<number, Outgoing>>({});
   const [receiving, setReceiving] = useState<Receiving[]>([]);
-  const timers = useRef<number[]>([]);
+  const timers = useRef(new Set<number>());
 
   useEffect(() => {
     api.getState().then(setState, (e) => setFatal(errorText(e)));
@@ -73,22 +73,21 @@ export default function App() {
         setOutgoing((m) => (m[id] ? { ...m, [id]: { ...m[id], result } } : m));
         // Good news fades; problems stay until the next try.
         if (["completed", "declined", "cancelled"].includes(result.outcome)) {
-          timers.current.push(
-            window.setTimeout(
-              () =>
-                setOutgoing((m) => {
-                  const { [id]: _, ...rest } = m;
-                  return rest;
-                }),
-              NOTE_MS,
-            ),
-          );
+          const t = window.setTimeout(() => {
+            timers.current.delete(t);
+            setOutgoing((m) => {
+              const { [id]: _, ...rest } = m;
+              return rest;
+            });
+          }, NOTE_MS);
+          timers.current.add(t);
         }
       }),
     ];
     return () => {
       subs.forEach((p) => p.then((unlisten) => unlisten()));
       timers.current.forEach(clearTimeout);
+      timers.current.clear();
     };
   }, []);
 
@@ -223,7 +222,10 @@ export default function App() {
                   type="button"
                   className="icon small"
                   aria-label="Dismiss"
-                  onClick={() => setReceiving((l) => l.filter((x) => x.id !== r.id))}
+                  onClick={() => {
+                    api.forgetReceived(r.id);
+                    setReceiving((l) => l.filter((x) => x.id !== r.id));
+                  }}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden>
                     <path d="M6 6l12 12M18 6 6 18" />
