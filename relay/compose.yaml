@@ -1,18 +1,29 @@
-# Run on the relay host (e.g. meox) behind Cloudflare:
-#   docker compose up -d --build
-# Point a Cloudflare Tunnel (or reverse proxy with TLS) at http://localhost:8787,
-# then use wss://<your relay host> as the relay address in Yon's Settings.
+# Yon Link relay (ADR-003). Deployed by .github/workflows/relay.yml, which
+# builds yon-relay:<git sha> and runs relay/deploy.sh on the server.
+# By hand:  YON_RELAY_TAG=dev docker compose up -d --build
+# Reached only through Cloudflare Tunnel (wss://<RELAY_HOST> → 127.0.0.1:8787).
+
+# WHY: fixed project name — each release lives in its own directory, and a
+# per-directory project would start a second container fighting for :8787.
+name: yon-relay
+
 services:
-  yon-relay:
-    build: .
-    restart: unless-stopped
+  relay:
+    image: yon-relay:${YON_RELAY_TAG:?YON_RELAY_TAG is required}
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
-      - "127.0.0.1:8787:8787"
+      - "127.0.0.1:8787:8787" # never 0.0.0.0: public only via the tunnel
     environment:
-      # Only safe because the port is bound to 127.0.0.1 and reached through
-      # Cloudflare; otherwise clients could fake CF-Connecting-IP.
+      # WHY: behind cloudflared every client comes from 127.0.0.1; without the
+      # real IP the per-IP limit would throttle all phones as one. Only safe
+      # because the port is loopback-only (nobody can fake the header).
       TRUST_CLOUDFLARE: "1"
     read_only: true
-    cap_drop: [ALL]
-    security_opt: ["no-new-privileges:true"]
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     mem_limit: 256m
+    restart: unless-stopped
