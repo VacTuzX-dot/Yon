@@ -113,19 +113,64 @@ pub fn reveal(path: &Path) -> io::Result<()> {
     }
     #[cfg(windows)]
     {
-        use std::os::windows::process::CommandExt;
-        // WHY: explorer needs `/select,"path"` verbatim; Rust's default arg
-        // quoting wraps the whole thing and explorer misparses it. Windows
-        // file names cannot contain `"`, so this can't break out.
-        std::process::Command::new("explorer")
-            .raw_arg(format!("/select,\"{}\"", path.display()))
-            .spawn()?;
+        // WHY: the Shell API (what browsers use for "Show in folder") lets a
+        // replacement file manager (Directory Opus, Files…) handle it; running
+        // explorer.exe directly would always open Explorer. It may block, so
+        // it runs on its own COM thread.
+        let path = path.to_path_buf();
+        std::thread::spawn(move || {
+            if !shell_reveal(&path) {
+                let _ = explorer_select(&path);
+            }
+        });
     }
     #[cfg(not(any(target_os = "macos", windows)))]
     {
         let dir = path.parent().unwrap_or(path);
         std::process::Command::new("xdg-open").arg(dir).spawn()?;
     }
+    Ok(())
+}
+
+#[cfg(windows)]
+fn shell_reveal(path: &Path) -> bool {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::System::Com::{
+        CoInitializeEx, CoUninitialize, COINIT_APARTMENTTHREADED,
+    };
+    use windows_sys::Win32::UI::Shell::{ILCreateFromPathW, ILFree, SHOpenFolderAndSelectItems};
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    // SAFETY: COM is initialized for this thread only and balanced below;
+    // `wide` is NUL-terminated; the PIDL is freed exactly once.
+    unsafe {
+        let init = CoInitializeEx(std::ptr::null(), COINIT_APARTMENTTHREADED as u32);
+        let pidl = ILCreateFromPathW(wide.as_ptr());
+        let ok = !pidl.is_null() && SHOpenFolderAndSelectItems(pidl, 0, std::ptr::null(), 0) >= 0;
+        if !pidl.is_null() {
+            ILFree(pidl);
+        }
+        if init >= 0 {
+            CoUninitialize();
+        }
+        ok
+    }
+}
+
+/// Fallback when the Shell API fails: plain Explorer.
+#[cfg(windows)]
+fn explorer_select(path: &Path) -> io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // WHY: explorer needs `/select,"path"` verbatim; Rust's default arg
+    // quoting wraps the whole thing and explorer misparses it. Windows
+    // file names cannot contain `"`, so this can't break out.
+    std::process::Command::new("explorer")
+        .raw_arg(format!("/select,\"{}\"", path.display()))
+        .spawn()?;
     Ok(())
 }
 

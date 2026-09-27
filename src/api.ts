@@ -175,4 +175,5 @@ export function recvOutcomeText(r: RecvFinished): string {
 }
 
 export const isMac = navigator.userAgent.includes("Mac");
-export const fileManagerName = isMac ? "Finder" : "Explorer";
+// Windows may hand this to Directory Opus, Files, etc. — don't promise Explorer.
+export const fileManagerName = isMac ? "Finder" : "folder";
