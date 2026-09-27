@@ -36,13 +36,29 @@ impl Throttle {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    use tauri::Manager;
+
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            use tauri::Manager;
             let state = app::setup(app.handle())?;
             app.manage(state);
+            app::setup_tray(app.handle())?;
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // WHY: keep Yon running (and able to receive) when the window is
+            // closed — ⌘W / red button on macOS, X on Windows if enabled.
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let hide = window
+                    .try_state::<app::AppState>()
+                    .map(|s| s.hide_on_close())
+                    .unwrap_or(false);
+                if hide {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             app::get_state,
@@ -55,7 +71,16 @@ pub fn run() {
             app::reveal,
             app::update_settings,
             app::pick_save_dir,
+            app::set_close_to_tray,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|_app, _event| {
+        // Clicking the Dock icon brings the hidden window back.
+        #[cfg(target_os = "macos")]
+        if let tauri::RunEvent::Reopen { .. } = _event {
+            app::show_main(_app);
+        }
+    });
 }

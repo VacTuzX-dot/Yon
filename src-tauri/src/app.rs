@@ -61,6 +61,7 @@ pub struct SettingsDto {
     device_name: String,
     save_dir: String,
     port: u16,
+    close_to_tray: bool,
 }
 
 #[derive(Serialize)]
@@ -135,10 +136,8 @@ impl ReceiverUi for TauriUi {
             total: req.total,
         };
         let _ = self.app.emit("incoming", dto);
+        show_main(&self.app);
         if let Some(w) = self.app.get_webview_window("main") {
-            let _ = w.unminimize();
-            let _ = w.show();
-            let _ = w.set_focus();
             let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
         }
         rx
@@ -294,7 +293,14 @@ impl AppState {
             device_name: s.device_name.clone(),
             save_dir: s.save_dir.display().to_string(),
             port: s.port,
+            close_to_tray: s.close_to_tray,
         }
+    }
+
+    /// Whether closing the main window should hide it instead of quitting.
+    pub fn hide_on_close(&self) -> bool {
+        // macOS convention: closing a window never quits the app.
+        cfg!(target_os = "macos") || self.settings.lock().expect("lock").close_to_tray
     }
 
     fn id(&self) -> u64 {
@@ -517,4 +523,73 @@ pub async fn pick_save_dir(
         *state.save_dir.write().expect("lock") = dir;
     }
     Ok(state.settings_dto())
+}
+
+#[tauri::command]
+pub fn set_close_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<SettingsDto, String> {
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.close_to_tray = enabled;
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    Ok(state.settings_dto())
+}
+
+// ---------- window + tray ----------
+
+/// Bring the main window back (from hidden, minimized or behind others).
+pub fn show_main(app: &AppHandle) {
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.unminimize();
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Menu bar (macOS) / notification area (Windows) icon with Open and Quit.
+pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+    use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+
+    let open = MenuItem::with_id(app, "open", "Open Yon", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Yon", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &quit])?;
+
+    let builder = TrayIconBuilder::with_id("main")
+        .tooltip("Yon")
+        .menu(&menu)
+        // macOS: click opens the menu (menu bar convention). Windows: left
+        // click opens the window, right click opens the menu.
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
+        .on_menu_event(|app, event| match event.id.as_ref() {
+            "open" => show_main(app),
+            "quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                if !cfg!(target_os = "macos") {
+                    show_main(tray.app_handle());
+                }
+            }
+        });
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .icon(tauri::include_image!("./icons/tray.png"))
+        .icon_as_template(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = match app.default_window_icon() {
+        Some(icon) => builder.icon(icon.clone()),
+        None => builder,
+    };
+
+    builder.build(app)?;
+    Ok(())
 }

@@ -17,6 +17,7 @@ Yon is a small, open-source desktop app for sending files between computers on t
 - Progress on both sides, with Cancel on both sides.
 - Large files are streamed, so a 1 GB file uses a few MB of memory, and every file is checked with SHA-256 when it arrives.
 - Received files go to `Downloads/Yon` (you can change this). Existing files are never overwritten: you get `photo (1).jpg` instead.
+- Stays ready in the background: on macOS, closing the window (⌘W) keeps Yon in the menu bar; on Windows, closing sends it to the tray (turn this off in Settings). Quit from the menu bar / tray icon, or ⌘Q on macOS.
 
 ## Install
 
@@ -40,6 +41,7 @@ The builds are not code-signed yet, so your OS will warn you the first time.
 - Nothing is written until you accept. File names are cleaned so they can't escape the save folder or collide with system names.
 - Received files are marked as downloaded (macOS quarantine / Windows Mark-of-the-Web), so the OS still checks them when opened.
 - Yon only accepts connections from private network addresses.
+- While Yon is running (including in the menu bar / tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
 
 Known limits of this version: IPv4 only, the key is stored as a file in the app's data folder (not in the system keychain), and there is no "trusted devices only" mode yet.
 

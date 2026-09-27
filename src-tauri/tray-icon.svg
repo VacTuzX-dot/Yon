@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="200 48 100 100">
+  <!-- Menu bar / tray glyph: same file-in-flight as the app icon, one colour.
+       macOS uses it as a template image (tinted for light/dark menu bars). -->
+  <path d="M204 116 L222 111 M208 131 L226 126" stroke="#000" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+  <g transform="rotate(-18 262 97)">
+    <path d="M246 62 H274 L290 78 V126 Q290 132 284 132 H246 Q238 132 238 126 V68 Q238 62 246 62 Z" fill="#000"/>
+  </g>
+</svg>

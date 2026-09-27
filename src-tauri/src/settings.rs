@@ -13,6 +13,14 @@ pub struct Settings {
     pub device_name: String,
     pub save_dir: PathBuf,
     pub port: u16,
+    /// Closing the window hides it (tray keeps Yon receiving). Ignored on
+    /// macOS, where closing always hides. Missing in old files → true.
+    #[serde(default = "default_true")]
+    pub close_to_tray: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Settings {
@@ -21,6 +29,7 @@ impl Settings {
             device_name: crate::platform::default_device_name(),
             save_dir: downloads.join("Yon"),
             port: crate::server::DEFAULT_PORT,
+            close_to_tray: true,
         }
     }
 
@@ -98,6 +107,7 @@ mod tests {
             // WHY: must be absolute on Windows too, so no "/tmp/..." literal.
             save_dir: dir.join("y"),
             port: 60000,
+            close_to_tray: false,
         };
         s.save(&dir).unwrap();
         assert_eq!(Settings::load(&dir, dl), s);
@@ -120,6 +130,18 @@ mod tests {
         assert_eq!(s.port, 53420);
         assert_eq!(s.save_dir, dl.join("Yon"));
         assert!(!s.device_name.trim().is_empty());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn old_settings_file_defaults_close_to_tray_on() {
+        let dir = temp_dir("settings-old");
+        let json = format!(
+            r#"{{"device_name":"Old","save_dir":{},"port":53420}}"#,
+            serde_json::to_string(&dir).unwrap()
+        );
+        fs::write(dir.join(FILE), json).unwrap();
+        assert!(Settings::load(&dir, Path::new("/d")).close_to_tray);
         fs::remove_dir_all(dir).unwrap();
     }
 

@@ -16,6 +16,7 @@ export interface Settings {
   device_name: string;
   save_dir: string;
   port: number;
+  close_to_tray: boolean;
 }
 
 export interface AppState {
@@ -94,6 +95,7 @@ export const api = {
   updateSettings: (deviceName: string, port: number) =>
     invoke<AppState>("update_settings", { deviceName, port }),
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),
+  setCloseToTray: (enabled: boolean) => invoke<Settings>("set_close_to_tray", { enabled }),
 };
 
 export interface Events {
@@ -165,4 +167,5 @@ export function recvOutcomeText(r: RecvFinished): string {
   }
 }
 
-export const fileManagerName = navigator.userAgent.includes("Mac") ? "Finder" : "Explorer";
+export const isMac = navigator.userAgent.includes("Mac");
+export const fileManagerName = isMac ? "Finder" : "Explorer";

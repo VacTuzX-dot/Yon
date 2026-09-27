@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, errorText, type AppState } from "../api";
+import { api, errorText, isMac, type AppState } from "../api";
 
 interface Props {
   state: AppState;
@@ -20,6 +20,16 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
     try {
       onChange(await api.updateSettings(name, Number(port)));
       onClose();
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function toggleTray(enabled: boolean) {
+    setError(null);
+    try {
+      const settings = await api.setCloseToTray(enabled);
+      onChange({ ...state, settings });
     } catch (err) {
       setError(errorText(err));
     }
@@ -62,6 +72,19 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
             </button>
           </div>
         </div>
+        {!isMac && (
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={state.settings.close_to_tray}
+              onChange={(e) => toggleTray(e.target.checked)}
+            />
+            <span>
+              Keep running in the tray when closed
+              <span className="hint">So nearby devices can still send you files.</span>
+            </span>
+          </label>
+        )}
         <details>
           <summary>Advanced</summary>
           <label className="field">
