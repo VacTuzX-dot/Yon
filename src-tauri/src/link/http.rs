@@ -20,6 +20,8 @@ pub struct Limits {
 #[derive(Debug)]
 pub struct Request {
     pub method: String,
+    /// Raw request target (path + query), bound into the AEAD associated data.
+    pub target: String,
     pub path: String,
     query: Vec<(String, String)>,
     headers: Vec<(String, String)>,
@@ -144,6 +146,7 @@ pub async fn read_request<R: AsyncRead + Unpin>(
     let (path, query) = split_target(target);
     Ok(Request {
         method,
+        target: target.to_string(),
         path,
         query,
         headers,

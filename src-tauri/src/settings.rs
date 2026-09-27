@@ -25,7 +25,24 @@ pub struct Settings {
     /// key fingerprint proven in the TLS handshake — never by name.
     #[serde(default)]
     pub trusted: Vec<TrustedDevice>,
+    /// Phones paired for Yon Link. `key` is the pairing secret (hex); it is
+    /// never sent to the UI after the QR is shown.
+    #[serde(default)]
+    pub phones: Vec<PairedPhone>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PairedPhone {
+    /// 16-byte pair id, hex.
+    pub id: String,
+    /// 32-byte pairing key, hex.
+    pub key: String,
+    pub name: String,
+    /// Unix seconds.
+    pub created: u64,
+}
+
+const MAX_PHONES: usize = 20;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrustedDevice {
@@ -50,6 +67,7 @@ impl Settings {
             close_to_tray: true,
             show_in_dock: true,
             trusted: Vec::new(),
+            phones: Vec::new(),
         }
     }
 
@@ -72,6 +90,11 @@ impl Settings {
                 // A hand-edited or corrupt entry must not match anything.
                 s.trusted.retain(|t| parse_fingerprint(&t.id).is_some());
                 s.trusted.truncate(MAX_TRUSTED);
+                s.phones.retain(|p| {
+                    crate::protocol::unhex::<16>(&p.id).is_some()
+                        && crate::protocol::unhex::<32>(&p.key).is_some()
+                });
+                s.phones.truncate(MAX_PHONES);
                 s
             }
             Err(e) => {
@@ -95,6 +118,19 @@ impl Settings {
         } else if self.trusted.len() < MAX_TRUSTED {
             self.trusted.push(TrustedDevice { id, name });
         }
+    }
+
+    /// Add a phone if there's room. Returns false when the list is full.
+    pub fn add_phone(&mut self, phone: PairedPhone) -> bool {
+        if self.phones.len() >= MAX_PHONES {
+            return false;
+        }
+        self.phones.push(phone);
+        true
+    }
+
+    pub fn remove_phone(&mut self, id: &str) {
+        self.phones.retain(|p| p.id != id);
     }
 
     pub fn untrust(&mut self, id: &str) {
@@ -154,6 +190,12 @@ mod tests {
             port: 60000,
             close_to_tray: false,
             show_in_dock: false,
+            phones: vec![PairedPhone {
+                id: "ab".repeat(16),
+                key: "cd".repeat(32),
+                name: "iPhone".into(),
+                created: 1,
+            }],
             trusted: vec![TrustedDevice {
                 id: "ab".repeat(32),
                 name: "Desk".into(),
@@ -228,6 +270,27 @@ mod tests {
         let s = Settings::load(&dir, Path::new("/d"));
         assert_eq!(s.trusted.len(), 1);
         assert!(s.is_trusted(&[0xcd; 32]));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_phones_are_dropped_on_load() {
+        let dir = temp_dir("settings-phones");
+        let good = format!(
+            r#"{{"id":"{}","key":"{}","name":"ok","created":1}}"#,
+            "a1".repeat(16),
+            "b2".repeat(32)
+        );
+        let json = format!(
+            r#"{{"device_name":"X","save_dir":{},"port":53420,"phones":[
+                {{"id":"short","key":"{}","name":"bad","created":1}},{good}]}}"#,
+            serde_json::to_string(&dir).unwrap(),
+            "b2".repeat(32)
+        );
+        fs::write(dir.join(FILE), json).unwrap();
+        let s = Settings::load(&dir, Path::new("/d"));
+        assert_eq!(s.phones.len(), 1);
+        assert_eq!(s.phones[0].name, "ok");
         fs::remove_dir_all(dir).unwrap();
     }
 
