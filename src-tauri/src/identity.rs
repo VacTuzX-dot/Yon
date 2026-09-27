@@ -269,11 +269,16 @@ pub(crate) mod tests {
     use tokio_rustls::{TlsAcceptor, TlsConnector};
 
     pub(crate) fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "yon-test-{tag}-{}-{:?}",
-            std::process::id(),
-            std::time::SystemTime::now()
-        ));
+        // WHY: only [A-Za-z0-9-] in the name — Debug of SystemTime contains ':'
+        // which Windows rejects in paths. Counter keeps parallel tests apart.
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let d =
+            std::env::temp_dir().join(format!("yon-test-{tag}-{}-{nanos}-{n}", std::process::id()));
         fs::create_dir_all(&d).unwrap();
         d
     }

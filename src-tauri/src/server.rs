@@ -327,6 +327,14 @@ impl Receiver {
                 _ = cancel.notified() => {
                     let _ = write_frame(&mut wr, &Frame::Cancel).await;
                     let _ = wr.shutdown().await;
+                    // WHY: closing while the sender's bytes sit unread makes the
+                    // OS send RST, and Windows then discards our Cancel on the
+                    // sender side. Drain until the sender hangs up (bounded).
+                    let mut sink = [0u8; 16 * 1024];
+                    let _ = timeout(Duration::from_secs(2), async {
+                        while matches!(rd.read(&mut sink).await, Ok(n) if n > 0) {}
+                    })
+                    .await;
                     self.ui.finished(id, RecvOutcome::Cancelled { by_sender: false, saved });
                     return Ok(());
                 }
@@ -418,7 +426,7 @@ async fn receive_one<R: tokio::io::AsyncRead + Unpin>(
     let claimed = match timed(read_frame(rd)).await {
         Ok(Frame::FileDone { sha256 }) => sha256,
         Ok(_) => return Err(RecvError::Failed("protocol violation".into())),
-        Err(ProtoError::Io(e)) if e.kind() == io::ErrorKind::UnexpectedEof => {
+        Err(ProtoError::Io(e)) if crate::transfer::is_disconnect(&e) => {
             return Err(RecvError::SenderGone)
         }
         Err(e) => return Err(fail("protocol violation", &e)),

@@ -113,6 +113,18 @@ pub fn sweep_partials(dir: &Path) -> io::Result<usize> {
     Ok(removed)
 }
 
+/// The peer went away: over TLS a close without close_notify is
+/// UnexpectedEof, and Windows usually resets (RST) instead of closing.
+pub fn is_disconnect(e: &io::Error) -> bool {
+    matches!(
+        e.kind(),
+        io::ErrorKind::UnexpectedEof
+            | io::ErrorKind::ConnectionReset
+            | io::ErrorKind::ConnectionAborted
+            | io::ErrorKind::BrokenPipe
+    )
+}
+
 #[derive(Debug)]
 pub enum BodyError {
     Io(io::Error),
@@ -160,9 +172,8 @@ where
         let want = left.min(CHUNK as u64) as usize;
         let n = match timeout(IDLE_TIMEOUT, r.read(&mut buf[..want])).await {
             Err(_) => return Err(BodyError::Idle),
-            // WHY: over TLS, a peer that just closes the socket (no
-            // close_notify) surfaces as UnexpectedEof, not Ok(0).
-            Ok(Err(e)) if e.kind() == io::ErrorKind::UnexpectedEof => 0,
+            // WHY: a peer that just goes away shows up as an error, not Ok(0).
+            Ok(Err(e)) if is_disconnect(&e) => 0,
             Ok(r) => r?,
         };
         if n == 0 {
