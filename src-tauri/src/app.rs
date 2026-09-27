@@ -694,7 +694,11 @@ fn send_to_phone(
     if let Err(e) = state.link.offer(id, phone, files.clone(), events) {
         state.outgoing.lock().expect("lock").remove(&id);
         // Keep the selection so the user can pick another device.
-        state.selections.lock().expect("lock").insert(selection_id, files);
+        state
+            .selections
+            .lock()
+            .expect("lock")
+            .insert(selection_id, files);
         return Err(e);
     }
     Ok(id)
@@ -707,16 +711,26 @@ struct PhoneOfferEvents {
 
 impl OfferEvents for PhoneOfferEvents {
     fn status(&self, status: SendStatus) {
-        let _ = self.app.emit("send-status", SendStatusDto { id: self.id, status });
+        let _ = self.app.emit(
+            "send-status",
+            SendStatusDto {
+                id: self.id,
+                status,
+            },
+        );
     }
 
     fn finished(&self, result: SendOutcome) {
         if let Some(state) = self.app.try_state::<AppState>() {
             state.outgoing.lock().expect("lock").remove(&self.id);
         }
-        let _ = self
-            .app
-            .emit("send-finished", SendFinishedDto { id: self.id, result });
+        let _ = self.app.emit(
+            "send-finished",
+            SendFinishedDto {
+                id: self.id,
+                result,
+            },
+        );
     }
 }
 
