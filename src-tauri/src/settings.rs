@@ -110,8 +110,10 @@ impl Settings {
 }
 
 pub fn validate_name(raw: &str) -> Result<String, &'static str> {
-    let name: String = raw.chars().filter(|c| !c.is_control()).collect();
-    let name = name.trim();
+    // Strip invisible/bidi characters too; count length on the raw input so
+    // "too long" means what the user typed.
+    let name = crate::sanitize::clean_display(raw, usize::MAX);
+    let name = name.as_str();
     if name.is_empty() {
         return Err("Device name can't be empty");
     }

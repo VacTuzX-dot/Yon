@@ -273,7 +273,11 @@ impl Receiver {
             .collect();
         let incoming = IncomingRequest {
             id,
-            sender_name: crate::platform::truncate_utf8(&req.name, 63).to_string(),
+            // Display-only and spoofable; the fingerprint is the real identity.
+            sender_name: match crate::sanitize::clean_display(&req.name, 63) {
+                n if n.is_empty() => "Unknown device".to_string(),
+                n => n,
+            },
             sender_os: req.os.clone(),
             fingerprint,
             files: files.clone(),

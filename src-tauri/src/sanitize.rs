@@ -19,9 +19,12 @@ pub fn sanitize_file_name(raw: &str) -> String {
     // 1. Only the last path component, whichever separator the sender used.
     let base = raw.rsplit(['/', '\\']).next().unwrap_or("");
 
-    // 2. Characters Windows forbids, plus control characters.
+    // 2. Characters Windows forbids, plus control characters. Invisible
+    //    format characters (bidi overrides etc.) are dropped so the name the
+    //    user approves looks exactly like the one written to disk.
     let mut name: String = base
         .chars()
+        .filter(|c| !is_hidden_format(*c))
         .map(|c| match c {
             '<' | '>' | ':' | '"' | '/' | '\\' | '|' | '?' | '*' => '_',
             c if c.is_control() => '_',
@@ -51,6 +54,40 @@ pub fn sanitize_file_name(raw: &str) -> String {
 
     // 8. Leading dot (".env") is intentionally kept.
     name
+}
+
+/// Characters that change how text *looks* without being visible: bidi
+/// controls can make `invoice\u{202E}fdp.exe` render as "invoiceexe.pdf".
+/// ZWJ/ZWNJ (U+200C/D) are kept — emoji sequences and several scripts need
+/// them, and they can't reorder text.
+pub fn is_hidden_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}'                      // soft hyphen
+        | '\u{061C}'                    // Arabic letter mark
+        | '\u{115F}' | '\u{1160}' | '\u{3164}' | '\u{FFA0}' // Hangul fillers (blank "letters")
+        | '\u{180E}'                    // Mongolian vowel separator
+        | '\u{200B}'                    // zero-width space
+        | '\u{200E}' | '\u{200F}'        // LRM / RLM
+        | '\u{202A}'..='\u{202E}'        // embeddings / overrides
+        | '\u{2060}'..='\u{2064}'        // word joiner, invisible operators
+        | '\u{2066}'..='\u{206F}'        // isolates + deprecated format chars
+        | '\u{FEFF}'                    // BOM / zero-width no-break space
+        | '\u{FFF9}'..='\u{FFFB}'        // interlinear annotation
+        | '\u{1D173}'..='\u{1D17A}'      // musical format chars
+        | '\u{E0000}'..='\u{E007F}'      // tag characters (can smuggle hidden text)
+    )
+}
+
+/// Clean untrusted text for display (device / sender names): no control
+/// or invisible format characters, trimmed, at most `max` bytes.
+pub fn clean_display(s: &str, max: usize) -> String {
+    let s: String = s
+        .chars()
+        .filter(|c| !c.is_control() && !is_hidden_format(*c))
+        .collect();
+    crate::platform::truncate_utf8(s.trim(), max)
+        .trim_end()
+        .to_string()
 }
 
 fn trim_trailing(name: &mut String) {
@@ -174,5 +211,32 @@ mod tests {
             assert!(!out.contains('/') && !out.contains('\\'), "{raw} -> {out}");
             assert!(out != "." && out != "..", "{raw} -> {out}");
         }
+    }
+
+    #[test]
+    fn strips_bidi_and_invisible_characters() {
+        // Right-to-left override: would display as "invoiceexe.pdf".
+        assert_eq!(s("invoice\u{202E}fdp.exe"), "invoicefdp.exe");
+        assert_eq!(s("a\u{2066}b\u{2069}c\u{200B}d\u{FEFF}.txt"), "abcd.txt");
+        assert_eq!(s("\u{202E}\u{200B}"), "file");
+        assert_eq!(s("x\u{E0041}\u{E0042}.png"), "x.png");
+    }
+
+    #[test]
+    fn keeps_joiners_needed_by_emoji_and_scripts() {
+        let family = "\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}.png";
+        assert_eq!(s(family), family);
+        assert_eq!(
+            s("\u{0645}\u{200C}\u{0627}.txt"),
+            "\u{0645}\u{200C}\u{0627}.txt"
+        );
+    }
+
+    #[test]
+    fn clean_display_names() {
+        use super::clean_display as c;
+        assert_eq!(c("Leo\u{200B}'s\u{202E} Mac\n", 63), "Leo's Mac");
+        assert_eq!(c("\u{3164}\u{3164}", 63), "");
+        assert_eq!(c("  กขค  ", 4), "ก");
     }
 }

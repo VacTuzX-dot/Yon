@@ -185,8 +185,7 @@ fn clean_name(s: &str) -> String {
 }
 
 fn clean(s: &str, max: usize) -> String {
-    let s: String = s.chars().filter(|c| !c.is_control()).collect();
-    crate::platform::truncate_utf8(s.trim(), max).to_string()
+    crate::sanitize::clean_display(s, max)
 }
 
 #[cfg(test)]
