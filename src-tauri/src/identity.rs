@@ -137,14 +137,7 @@ pub fn short_fingerprint(fp: &Fingerprint) -> String {
 }
 
 pub fn parse_fingerprint(s: &str) -> Option<Fingerprint> {
-    if s.len() != 64 {
-        return None;
-    }
-    let mut out = [0u8; 32];
-    for (i, byte) in out.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(s.get(i * 2..i * 2 + 2)?, 16).ok()?;
-    }
-    Some(out)
+    crate::protocol::unhex::<32>(s)
 }
 
 #[derive(Debug)]
@@ -321,6 +314,7 @@ pub(crate) mod tests {
         assert_eq!(parse_fingerprint(&hex(&fp)), Some(fp));
         assert_eq!(parse_fingerprint("zz"), None);
         assert_eq!(parse_fingerprint(&"g".repeat(64)), None);
+        assert_eq!(parse_fingerprint(&format!("+1{}", "0".repeat(62))), None);
     }
 
     /// Returns (client-seen-by-server fingerprint, client result).

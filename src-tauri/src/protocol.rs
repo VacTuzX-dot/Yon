@@ -158,6 +158,19 @@ pub fn hex(bytes: &[u8]) -> String {
     s
 }
 
+/// Parse exactly `N` bytes of hex (either case). `None` for anything else.
+pub fn unhex<const N: usize>(s: &str) -> Option<[u8; N]> {
+    // WHY: from_str_radix alone accepts a leading '+' ("+1" parses as 1).
+    if s.len() != N * 2 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let mut out = [0u8; N];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,6 +293,16 @@ mod tests {
     #[test]
     fn validate_allows_max_files() {
         assert!(req(vec![file(1); MAX_FILES]).validate().is_ok());
+    }
+
+    #[test]
+    fn unhex_roundtrip_and_rejects() {
+        assert_eq!(unhex::<3>("00abFF"), Some([0x00, 0xab, 0xff]));
+        assert_eq!(unhex::<2>("00ab"), Some([0, 0xab]));
+        assert_eq!(unhex::<2>("00a"), None);
+        assert_eq!(unhex::<2>("zzzz"), None);
+        assert_eq!(unhex::<2>("\u{e9}\u{e9}"), None);
+        assert_eq!(unhex::<1>("+1"), None);
     }
 
     #[test]
