@@ -12,6 +12,7 @@
 pub mod crypto;
 pub mod http;
 pub mod outbox;
+pub mod remote;
 
 use crate::client::{OutFile, SendOutcome, SendStatus};
 use crate::identity::Fingerprint;
@@ -374,53 +375,53 @@ impl Link {
                 return;
             }
         };
-        let (status, ctype, headers, body): (u16, &str, Vec<(&str, String)>, Vec<u8>) =
-            match (req.method.as_str(), req.path.as_str()) {
-                ("GET", "/") => (
-                    200,
-                    "text/html; charset=utf-8",
-                    vec![],
-                    PAGE_HTML.as_bytes().to_vec(),
-                ),
-                ("GET", "/link.js") => (
-                    200,
-                    "text/javascript; charset=utf-8",
-                    vec![],
-                    PAGE_JS.as_bytes().to_vec(),
-                ),
-                ("GET", "/link.css") => (
-                    200,
-                    "text/css; charset=utf-8",
-                    vec![],
-                    PAGE_CSS.as_bytes().to_vec(),
-                ),
-                ("GET", "/icon.png") => (200, "image/png", vec![], ICON_PNG.to_vec()),
-                ("GET", "/hello") => self.hello(&req, *addr.ip()),
-                (
-                    "POST",
-                    "/request" | "/chunk" | "/status" | "/done" | "/cancel" | "/inbox" | "/pull"
-                    | "/peers" | "/offer/accept" | "/offer/decline" | "/offer/done"
-                    | "/offer/cancel",
-                ) => match self.sealed(&req, *addr.ip()).await {
-                    Some((ctr, body)) => (
-                        200,
-                        "application/octet-stream",
-                        vec![("X-Yon-Ctr", ctr.to_string())],
-                        body,
-                    ),
-                    None => not_found(),
-                },
-                _ => not_found(),
-            };
+        let (status, ctype, headers, body) = self.respond(&req, *addr.ip()).await;
         let _ = write_response(&mut tcp, status, ctype, &headers, &body).await;
         let _ = tcp.shutdown().await;
     }
 
-    fn hello(
-        &self,
-        req: &Request,
-        ip: Ipv4Addr,
-    ) -> (u16, &'static str, Vec<(&'static str, String)>, Vec<u8>) {
+    /// Answer one request, whichever way it arrived (LAN socket or relay).
+    /// `ip` identifies the phone for rate limits and cooldowns.
+    pub async fn respond(&self, req: &Request, ip: Ipv4Addr) -> Response {
+        match (req.method.as_str(), req.path.as_str()) {
+            ("GET", "/") => (
+                200,
+                "text/html; charset=utf-8",
+                vec![],
+                PAGE_HTML.as_bytes().to_vec(),
+            ),
+            ("GET", "/link.js") => (
+                200,
+                "text/javascript; charset=utf-8",
+                vec![],
+                PAGE_JS.as_bytes().to_vec(),
+            ),
+            ("GET", "/link.css") => (
+                200,
+                "text/css; charset=utf-8",
+                vec![],
+                PAGE_CSS.as_bytes().to_vec(),
+            ),
+            ("GET", "/icon.png") => (200, "image/png", vec![], ICON_PNG.to_vec()),
+            ("GET", "/hello") => self.hello(req, ip),
+            (
+                "POST",
+                "/request" | "/chunk" | "/status" | "/done" | "/cancel" | "/inbox" | "/pull"
+                | "/peers" | "/offer/accept" | "/offer/decline" | "/offer/done" | "/offer/cancel",
+            ) => match self.sealed(req, ip).await {
+                Some((ctr, body)) => (
+                    200,
+                    "application/octet-stream",
+                    vec![("X-Yon-Ctr", ctr.to_string())],
+                    body,
+                ),
+                None => not_found(),
+            },
+            _ => not_found(),
+        }
+    }
+
+    fn hello(&self, req: &Request, ip: Ipv4Addr) -> Response {
         if !self.allow_hello(ip) {
             return (
                 429,
@@ -1096,7 +1097,10 @@ pub fn qr_svg_path(data: &str) -> Option<(usize, String)> {
     Some((n, path))
 }
 
-fn not_found() -> (u16, &'static str, Vec<(&'static str, String)>, Vec<u8>) {
+/// Status, content type, extra headers, body.
+pub type Response = (u16, &'static str, Vec<(&'static str, String)>, Vec<u8>);
+
+fn not_found() -> Response {
     (404, "text/plain", vec![], b"Not found".to_vec())
 }
 

@@ -32,6 +32,10 @@ rcgen = "0.14"
 webpki = { version = "0.103.15", package = "rustls-webpki", default-features = false, features = ["alloc", "ring"] }
 httparse = "1"
 qrcode = { version = "0.14.1", default-features = false }
+tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["handshake"] }
+rustls-platform-verifier = "0.7"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

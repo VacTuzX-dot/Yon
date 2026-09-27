@@ -29,6 +29,28 @@ pub struct Request {
 }
 
 impl Request {
+    /// A request that arrived some other way than raw HTTP (the relay).
+    /// Same target parsing as `read_request`; header names are lowercased.
+    pub fn from_parts(
+        method: String,
+        target: String,
+        headers: Vec<(String, String)>,
+        body: Vec<u8>,
+    ) -> Self {
+        let (path, query) = split_target(&target);
+        Self {
+            method,
+            path,
+            query,
+            target,
+            headers: headers
+                .into_iter()
+                .map(|(k, v)| (k.to_ascii_lowercase(), v))
+                .collect(),
+            body,
+        }
+    }
+
     pub fn query(&self, key: &str) -> Option<&str> {
         self.query
             .iter()

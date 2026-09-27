@@ -888,3 +888,180 @@ async fn cancelled_relay_upload_leaves_nothing_behind() {
     assert!(listing(&relay).is_empty(), "{:?}", listing(&relay));
     assert!(pb.call("POST", "/inbox", b"").await.1["offer"].is_null());
 }
+
+// ---------- through the relay (ADR-003) ----------
+
+mod relay {
+    use super::*;
+    use futures_util::{SinkExt, StreamExt};
+    use tokio_tungstenite::tungstenite::Message;
+    use yon_lib::link::remote::{self, RemoteStatus};
+
+    type Ws = tokio_tungstenite::WebSocketStream<tokio::net::TcpStream>;
+
+    /// A fake relay: accepts the computer, checks its secret, confirms `room`.
+    async fn relay_with(
+        room: impl Fn(&[u8; 32]) -> String,
+    ) -> (SocketAddr, tokio::task::JoinHandle<(Ws, String)>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let secret = [0x5a; 32];
+        let confirm = room(&secret);
+        let task = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut ws = tokio_tungstenite::accept_async(tcp).await.unwrap();
+            let Some(Ok(Message::Text(sent))) = ws.next().await else {
+                panic!("no secret")
+            };
+            ws.send(Message::Text(confirm.into())).await.unwrap();
+            (ws, sent.to_string())
+        });
+        (addr, task)
+    }
+
+    fn frame(
+        phone: u32,
+        req: u32,
+        method: &str,
+        target: &str,
+        headers: &[(&str, String)],
+        body: &[u8],
+    ) -> Vec<u8> {
+        let head = json!({ "m": method, "t": target, "h": headers }).to_string();
+        let mut f = Vec::new();
+        f.extend_from_slice(&phone.to_be_bytes());
+        f.extend_from_slice(&req.to_be_bytes());
+        f.extend_from_slice(&(head.len() as u16).to_be_bytes());
+        f.extend_from_slice(head.as_bytes());
+        f.extend_from_slice(body);
+        f
+    }
+
+    /// Returns (phone id, request id, status, headers, body).
+    async fn reply(ws: &mut Ws) -> (u32, u32, u16, Vec<(String, String)>, Vec<u8>) {
+        loop {
+            match tokio::time::timeout(Duration::from_secs(5), ws.next())
+                .await
+                .unwrap()
+            {
+                Some(Ok(Message::Binary(b))) => {
+                    let hl = u16::from_be_bytes([b[8], b[9]]) as usize;
+                    let head: Value = serde_json::from_slice(&b[10..10 + hl]).unwrap();
+                    let headers = serde_json::from_value(head["h"].clone()).unwrap();
+                    return (
+                        u32::from_be_bytes(b[0..4].try_into().unwrap()),
+                        u32::from_be_bytes(b[4..8].try_into().unwrap()),
+                        head["s"].as_u64().unwrap() as u16,
+                        headers,
+                        b[10 + hl..].to_vec(),
+                    );
+                }
+                Some(Ok(_)) => continue, // pings
+                other => panic!("relay socket ended: {other:?}"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn phone_talks_to_link_through_the_relay() {
+        let env = setup("remote", Mode::Accept).await;
+        let (addr, relay) = relay_with(remote::room_id).await;
+        let statuses = Arc::new(Mutex::new(Vec::new()));
+        let seen = statuses.clone();
+        let client = tokio::spawn(remote::run(
+            env.link.clone(),
+            format!("ws://{addr}"),
+            [0x5a; 32],
+            CHUNK + 64,
+            move |s| seen.lock().unwrap().push(s),
+        ));
+        let (mut ws, secret) = relay.await.unwrap();
+        assert_eq!(secret, hex(&[0x5a; 32]));
+
+        // /hello through the relay, then a sealed /peers with the session key.
+        let nc = [0x33u8; 16];
+        let hello = format!("/hello?p={}&nc={}", hex(&env.phone.id), hex(&nc));
+        ws.send(Message::Binary(frame(7, 1, "GET", &hello, &[], b"").into()))
+            .await
+            .unwrap();
+        let (phone, req, status, _, body) = reply(&mut ws).await;
+        assert_eq!((phone, req, status), (7, 1, 200));
+        let v: Value = serde_json::from_slice(&body).unwrap();
+        let sid = unhex::<16>(v["sid"].as_str().unwrap()).unwrap();
+        let key = SessionKey::derive(
+            &env.phone.key,
+            &unhex::<16>(v["ns"].as_str().unwrap()).unwrap(),
+            &nc,
+        );
+
+        let sealed = key.seal(Dir::PhoneToComputer, 1, "POST /peers", &sid, b"");
+        let h = [("X-Yon-Sid", hex(&sid)), ("X-Yon-Ctr", "1".to_string())];
+        ws.send(Message::Binary(
+            frame(7, 2, "POST", "/peers", &h, &sealed).into(),
+        ))
+        .await
+        .unwrap();
+        let (_, req, status, headers, body) = reply(&mut ws).await;
+        assert_eq!((req, status), (2, 200));
+        let out: u64 = headers
+            .iter()
+            .find(|(k, _)| k == "x-yon-ctr")
+            .unwrap()
+            .1
+            .parse()
+            .unwrap();
+        let plain = key
+            .open(Dir::ComputerToPhone, out, "POST /peers", &sid, &body)
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&plain).unwrap()["computer"],
+            "Test Mac"
+        );
+
+        // Garbage is dropped without an answer; the connection stays up.
+        ws.send(Message::Binary(vec![1, 2, 3].into()))
+            .await
+            .unwrap();
+        ws.send(Message::Binary(frame(7, 3, "DELETE", "/", &[], b"").into()))
+            .await
+            .unwrap();
+        ws.send(Message::Binary(
+            frame(7, 4, "GET", "/nope", &[], b"").into(),
+        ))
+        .await
+        .unwrap();
+        assert_eq!(
+            reply(&mut ws).await.1,
+            4,
+            "only the valid frame is answered"
+        );
+        assert!(statuses.lock().unwrap().contains(&RemoteStatus::Connected));
+        client.abort();
+    }
+
+    #[tokio::test]
+    async fn refuses_a_relay_that_confirms_another_room() {
+        let env = setup("remote-bad", Mode::Accept).await;
+        let (addr, relay) = relay_with(|_| "00".repeat(32)).await;
+        let statuses = Arc::new(Mutex::new(Vec::new()));
+        let seen = statuses.clone();
+        let client = tokio::spawn(remote::run(
+            env.link.clone(),
+            format!("ws://{addr}"),
+            [0x5a; 32],
+            CHUNK + 64,
+            move |s| seen.lock().unwrap().push(s),
+        ));
+        let _ = relay.await.unwrap();
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let got = statuses.lock().unwrap().clone();
+        assert!(!got.contains(&RemoteStatus::Connected), "{got:?}");
+        assert!(
+            got.iter().any(
+                |s| matches!(s, RemoteStatus::Error { message } if message.contains("wrong room"))
+            ),
+            "{got:?}"
+        );
+        client.abort();
+    }
+}
