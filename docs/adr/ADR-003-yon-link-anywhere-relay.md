@@ -1,6 +1,6 @@
 # ADR-003: Yon Link from anywhere through a blind WebSocket relay
 
-**Status:** Proposed
+**Status:** Accepted (2026-09-28)
 **Date:** 2026-09-28
 
 ## Context
