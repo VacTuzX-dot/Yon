@@ -4,12 +4,13 @@
   "version": "0.1.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "bun run build:link && vite",
+    "build": "bun run build:link && tsc && vite build",
+    "build:link": "bun run scripts/build-link.ts",
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "lint": "bun -e \"for await (const f of new Bun.Glob('src/**/*.{ts,tsx}').scan('.')) if ((await Bun.file(f).text()).includes('dangerouslySetInnerHTML')) { console.error(f + ': dangerouslySetInnerHTML is not allowed'); process.exit(1) }\"",
+    "lint": "bun -e \"for await (const f of new Bun.Glob('{src,web}/**/*.{ts,tsx}').scan('.')) if ((await Bun.file(f).text()).includes('dangerouslySetInnerHTML')) { console.error(f + ': dangerouslySetInnerHTML is not allowed'); process.exit(1) }\"",
     "test": "bun test web/"
   },
   "dependencies": {

@@ -257,6 +257,8 @@ async fn serves_page_with_security_headers() {
     assert!(head.contains("Content-Security-Policy: default-src 'self'"));
     assert!(head.contains("Referrer-Policy: no-referrer"));
     assert_eq!(http(env.addr, "GET", "/icon.png", &[], b"").await.0, 200);
+    assert_eq!(http(env.addr, "GET", "/link.js", &[], b"").await.0, 200);
+    assert_eq!(http(env.addr, "GET", "/link.css", &[], b"").await.0, 200);
     assert_eq!(http(env.addr, "GET", "/nope", &[], b"").await.0, 404);
 }
 
@@ -315,16 +317,16 @@ async fn strangers_replays_and_tampering_get_404() {
         },
     )
     .await;
-    assert_eq!(wrong.call("GET", "/status", b"").await.0, 404);
+    assert_eq!(wrong.call("POST", "/status", b"").await.0, 404);
     // Valid session: replayed counter and tampered route are rejected.
     let mut p = FakePhone::hello(env.addr, &env.phone).await;
-    assert_eq!(p.call("GET", "/status", b"").await.0, 200);
-    assert_eq!(p.raw_call("GET", "/status", b"", 1).await.0, 404, "replay");
+    assert_eq!(p.call("POST", "/status", b"").await.0, 200);
+    assert_eq!(p.raw_call("POST", "/status", b"", 1).await.0, 404, "replay");
     p.ctr += 1;
     let ctr = p.ctr;
     let sealed = p
         .key
-        .seal(Dir::PhoneToComputer, ctr, "GET /status", &p.sid, b"");
+        .seal(Dir::PhoneToComputer, ctr, "POST /status", &p.sid, b"");
     let headers = [("X-Yon-Sid", hex(&p.sid)), ("X-Yon-Ctr", ctr.to_string())];
     assert_eq!(
         http(env.addr, "POST", "/cancel", &headers, &sealed).await.0,
@@ -333,7 +335,7 @@ async fn strangers_replays_and_tampering_get_404() {
     );
     // Removing the phone kills its sessions.
     env.link.set_phones(vec![]);
-    assert_eq!(p.call("GET", "/status", b"").await.0, 404);
+    assert_eq!(p.call("POST", "/status", b"").await.0, 404);
     assert_eq!(env.ui.asked.load(Ordering::SeqCst), 0);
 }
 
@@ -370,7 +372,7 @@ async fn resumes_after_gaps_and_ignores_duplicates() {
         p.call("POST", "/chunk?f=0&i=0", &chunk(0)).await.1["result"],
         "ok"
     );
-    assert_eq!(p.call("GET", "/status", b"").await.1["next"], 1);
+    assert_eq!(p.call("POST", "/status", b"").await.1["next"], 1);
     p.call("POST", "/chunk?f=0&i=1", &chunk(1)).await;
     p.call("POST", "/chunk?f=0&i=2", &chunk(2)).await;
     assert_eq!(p.call("POST", "/done", b"").await.1["result"], "completed");
@@ -433,4 +435,22 @@ async fn more_bytes_than_announced_fails_and_cleans_up() {
     assert_eq!(v["result"], "failed");
     assert!(matches!(next(&mut env).await, RecvOutcome::Failed { .. }));
     assert!(listing(&env.recv_dir).is_empty());
+}
+
+/// Manual check of the real page in a browser (auto-accepts, never exits):
+/// `cargo test --test link -- --ignored serve_page_for_browser --nocapture`
+#[tokio::test]
+#[ignore]
+async fn serve_page_for_browser() {
+    let mut env = setup("browser", Mode::Accept).await;
+    println!(
+        "open http://{}/#{}.{}\nfiles land in {}",
+        env.addr,
+        hex(&env.phone.id),
+        hex(&env.phone.key),
+        env.recv_dir.display()
+    );
+    while let Some(outcome) = env.outcomes.recv().await {
+        println!("{outcome:?} → {:?}", listing(&env.recv_dir));
+    }
 }

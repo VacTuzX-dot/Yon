@@ -29,7 +29,7 @@ See ADR-001 for why this exists. Scope: v1, upload from phone to computer.
 
 - TCP port 53421 on all IPv4 interfaces (private source addresses only), open only while a phone is paired or the pairing sheet is shown
 - `GET /` and static assets (no secrets; K is never sent to the server)
-- `GET /hello?p=<pair_id>`, `POST /request`, `POST /chunk`, `GET /status`, `POST /done`, `POST /cancel` — all but `/` and `/hello` require a valid AEAD session
+- `GET /hello?p=<pair_id>`, `POST /request`, `POST /chunk`, `POST /status`, `POST /done`, `POST /cancel` — all but `/` and `/hello` require a valid AEAD session
 - QR code and saved Home Screen URL (contain K in the fragment)
 
 ### 5. Threats (STRIDE)

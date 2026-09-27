@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="referrer" content="no-referrer" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Yon" />
+    <title>Yon</title>
+    <link rel="icon" href="/icon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="stylesheet" href="/link.css" />
+    <script src="/link.js" defer></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <img src="/icon.png" alt="" width="56" height="56" />
+        <h1 id="title">Yon</h1>
+        <p id="subtitle">Connecting…</p>
+      </header>
+
+      <section id="pick" hidden>
+        <input id="files" type="file" multiple />
+        <label class="big" for="files">Send photos &amp; files</label>
+        <p class="hint" id="add-home" hidden>
+          Tip: tap Share, then “Add to Home Screen”. Next time just tap the Yon icon.
+        </p>
+      </section>
+
+      <section id="busy" hidden>
+        <p id="status"></p>
+        <div class="bar"><div id="fill"></div></div>
+        <p class="hint" id="detail"></p>
+        <p class="hint" id="keep-open">Keep this screen open while sending.</p>
+        <button id="cancel" type="button">Cancel</button>
+      </section>
+
+      <section id="end" hidden>
+        <p id="result"></p>
+        <button id="again" class="big" type="button">Send more</button>
+      </section>
+    </main>
+  </body>
+</html>

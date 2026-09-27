@@ -2,11 +2,11 @@
 //! See docs/adr/ADR-001-yon-link-web-mode.md and docs/threat-model-yon-link.md.
 //!
 //! Routes (one HTTP request per connection):
-//! - `GET /`, `/link.js`, `/icon.png` — the page (no secrets; the pairing key
+//! - `GET /`, `/link.js`, `/link.css`, `/icon.png` — the page (no secrets; the pairing key
 //!   stays in the URL fragment on the phone).
 //! - `GET /hello?p=<pair id>&nc=<nonce>` — start a session (rate limited).
 //! - Sealed (AEAD, see `crypto`): `POST /request`, `POST /chunk?f=&i=`,
-//!   `GET /status`, `POST /done`, `POST /cancel`. Anything that fails to open
+//!   `POST /status`, `POST /done`, `POST /cancel`. Anything that fails to open
 //!   gets the same 404 as an unknown route.
 
 pub mod crypto;
@@ -42,6 +42,7 @@ const HELLO_PER_MINUTE: u32 = 20;
 
 const PAGE_HTML: &str = include_str!("../../link-dist/link.html");
 const PAGE_JS: &str = include_str!("../../link-dist/link.js");
+const PAGE_CSS: &str = include_str!("../../link-dist/link.css");
 const ICON_PNG: &[u8] = include_bytes!("../../icons/128x128@2x.png");
 
 #[derive(Clone, Debug)]
@@ -229,9 +230,15 @@ impl Link {
                     vec![],
                     PAGE_JS.as_bytes().to_vec(),
                 ),
+                ("GET", "/link.css") => (
+                    200,
+                    "text/css; charset=utf-8",
+                    vec![],
+                    PAGE_CSS.as_bytes().to_vec(),
+                ),
                 ("GET", "/icon.png") => (200, "image/png", vec![], ICON_PNG.to_vec()),
                 ("GET", "/hello") => self.hello(&req, *addr.ip()),
-                ("POST", "/request" | "/chunk" | "/done" | "/cancel") | ("GET", "/status") => {
+                ("POST", "/request" | "/chunk" | "/status" | "/done" | "/cancel") => {
                     match self.sealed(&req, *addr.ip()).await {
                         Some((ctr, body)) => (
                             200,
