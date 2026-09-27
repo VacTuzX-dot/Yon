@@ -264,6 +264,9 @@ mod tests {
         let ok = Reserved::claim(&dir, "ok.txt").unwrap();
         let mut f = ok.open_part().await.unwrap();
         f.write_all(b"data").await.unwrap();
+        // WHY: tokio::fs writes in a background task; without flush the
+        // bytes may not be on disk yet when we rename (flaky on slow CI).
+        f.flush().await.unwrap();
         drop(f);
         let path = ok.commit().unwrap();
         assert_eq!(fs::read(&path).unwrap(), b"data");

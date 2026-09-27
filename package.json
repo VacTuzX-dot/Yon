@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "typecheck": "tsc --noEmit",
-    "lint": "tsc --noEmit && ! grep -rn dangerouslySetInnerHTML src"
+    "lint": "tsc --noEmit && bun -e \"for await (const f of new Bun.Glob('src/**/*.{ts,tsx}').scan('.')) if ((await Bun.file(f).text()).includes('dangerouslySetInnerHTML')) { console.error(f + ': dangerouslySetInnerHTML is not allowed'); process.exit(1) }\""
   },
   "dependencies": {
     "react": "^19.1.0",
