@@ -1,6 +1,9 @@
 # ADR-002: Speak the LocalSend protocol (v2) alongside Yon's own
 
-**Status:** Proposed
+**Status:** Deferred (2026-09-27): the maintainer wants Yon to be the only app
+on every device. Phones get computer → phone and phone ↔ phone through Yon
+Link instead (see ADR-001). Kept for the research; revisit if native mobile
+apps stay out of reach.
 **Date:** 2026-09-27
 
 ## Context
