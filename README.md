@@ -34,6 +34,16 @@ The builds are not code-signed yet, so your OS will warn you the first time.
 
 **Windows:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
 
+### Verify the download
+
+Each release has a `SHA256SUMS.txt`. Put it next to the file you downloaded and run:
+
+```bash
+shasum -a 256 --ignore-missing -c SHA256SUMS.txt
+```
+
+On Windows (PowerShell), compare the output of `Get-FileHash .\Yon_x.y.z_x64-setup.exe` with the matching line in `SHA256SUMS.txt`.
+
 ## Security
 
 - Every install has its own Ed25519 key. Connections use mutual TLS 1.3, and the sender checks it is talking to the exact device it discovered.
@@ -69,7 +79,7 @@ The second instance shares the first one's dev server and picks a free port auto
 ### Checks
 
 ```bash
-bun run lint
+bun run typecheck && bun run lint
 ```
 
 ```bash
@@ -89,6 +99,13 @@ bun tauri build
 ```
 
 Installers end up in `src-tauri/target/release/bundle/`. Releases are built by GitHub Actions when a `v*` tag is pushed; the tag must match the version in `tauri.conf.json`, `package.json` and `Cargo.toml`.
+
+### Signing (not set up yet)
+
+Builds are unsigned. Signing needs credentials that belong to the maintainer:
+
+- **macOS:** an Apple Developer ID Application certificate and notarization credentials, stored as GitHub Actions secrets for `tauri-action` (see Tauri's [macOS signing guide](https://v2.tauri.app/distribute/sign/macos/)).
+- **Windows:** an Authenticode code-signing certificate (see Tauri's [Windows signing guide](https://v2.tauri.app/distribute/sign/windows/)).
 
 ## Project layout
 

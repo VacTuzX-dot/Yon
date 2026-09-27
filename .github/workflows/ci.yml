@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Release runs this same gate on the tagged revision before building.
+  workflow_call:
 
 # Least privilege: CI only reads the repo.
 permissions:
@@ -41,7 +43,10 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - name: Frontend typecheck + lint
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint (no dangerouslySetInnerHTML)
         run: bun run lint
 
       # tauri::generate_context! needs the built frontend (frontendDist) to exist.

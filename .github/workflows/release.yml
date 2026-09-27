@@ -26,8 +26,12 @@ jobs:
           echo "tag=$tag tauri.conf=$conf package.json=$pkg Cargo.toml=$cargo"
           [ "$tag" = "$conf" ] && [ "$tag" = "$pkg" ] && [ "$tag" = "$cargo" ]
 
+  # Same checks as every push (fmt, clippy, tests…) on this exact tag.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   build:
-    needs: version
+    needs: [version, ci]
     # Only this job may write, and only to create the draft release.
     permissions:
       contents: write
@@ -42,6 +46,8 @@ jobs:
             target: ''
             args: --bundles nsis
     runs-on: ${{ matrix.platform }}
+    outputs:
+      release_id: ${{ steps.tauri.outputs.releaseId }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -62,7 +68,8 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
-      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+      - id: tauri
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -74,3 +81,30 @@ jobs:
             Unsigned build. See the README for how to open it on macOS (right-click → Open) and Windows (SmartScreen → More info → Run anyway).
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # SHA256SUMS.txt computed from the exact files attached to the release.
+  checksums:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+      RELEASE_ID: ${{ needs.build.outputs.release_id }}
+    steps:
+      - name: Download assets, hash, upload SHA256SUMS.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir assets && cd assets
+          gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate \
+            -q '.[] | select(.name != "SHA256SUMS.txt") | "\(.id) \(.name)"' |
+          while read -r id name; do
+            gh api -H "Accept: application/octet-stream" "repos/$REPO/releases/assets/$id" > "$name"
+          done
+          sha256sum -- * > ../SHA256SUMS.txt
+          cat ../SHA256SUMS.txt
+          gh api --method POST -H "Content-Type: text/plain" \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=SHA256SUMS.txt" \
+            --input ../SHA256SUMS.txt > /dev/null

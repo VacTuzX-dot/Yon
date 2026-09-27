@@ -1,0 +1,17 @@
+# Weekly dependency update PRs. Security alerts for known vulnerabilities
+# come from GitHub's advisory database (enable "Dependabot alerts" and
+# "Dependabot security updates" in the repository settings).
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+  - package-ecosystem: bun
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
