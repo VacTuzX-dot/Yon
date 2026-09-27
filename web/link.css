@@ -123,7 +123,8 @@ button:focus-visible {
   outline-offset: 3px;
 }
 
-#cancel {
+#cancel,
+.quiet {
   align-self: center;
   padding: 0.6rem 1.5rem;
   background: transparent;
@@ -164,4 +165,45 @@ button:focus-visible {
   #fill {
     transition: none;
   }
+}
+
+.lead {
+  text-align: center;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.files {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+}
+
+.files li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.95rem;
+}
+
+.files .name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.files .size {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.files button {
+  padding: 0.4rem 0.9rem;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
 }

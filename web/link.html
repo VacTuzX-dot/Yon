@@ -27,6 +27,14 @@
         <p class="hint" id="add-home" hidden>
           Tip: tap Share, then “Add to Home Screen”. Next time just tap the Yon icon.
         </p>
+        <p class="hint">Keep this page open to receive files from the computer.</p>
+      </section>
+
+      <section id="incoming" hidden>
+        <p id="offer-text" class="lead"></p>
+        <ul id="offer-files" class="files"></ul>
+        <button id="receive" class="big" type="button">Receive</button>
+        <button id="decline" class="quiet" type="button">Decline</button>
       </section>
 
       <section id="busy" hidden>
@@ -39,6 +47,10 @@
 
       <section id="end" hidden>
         <p id="result"></p>
+        <ul id="saved" class="files" hidden></ul>
+        <p class="hint" id="save-hint" hidden>
+          Tap Save, then Share → “Save to Files” (or “Save Image” for photos and videos).
+        </p>
         <button id="again" class="big" type="button">Send more</button>
       </section>
     </main>

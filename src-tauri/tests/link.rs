@@ -471,6 +471,24 @@ async fn serve_page_for_browser() {
         hex(&env.phone.key),
         env.recv_dir.display()
     );
+    // Computer → phone: keep offering two files; each outcome is printed.
+    let big: Vec<u8> = (0..(CHUNK * 2 + 4321)).map(|i| (i % 251) as u8).collect();
+    let src = env.root.join("send");
+    let files = vec![
+        out_file(&src, "hello.txt", b"hello from the computer\n"),
+        out_file(&src, "pattern.bin", &big),
+    ];
+    let (link, phone) = (env.link.clone(), env.phone.id);
+    tokio::spawn(async move {
+        for id in 1.. {
+            let (ev, done) = events();
+            if link.offer(id, phone, files.clone(), ev.clone()).is_ok() {
+                println!("offer {id}: {:?}", done.await);
+                println!("  events: {}", ev.log.lock().unwrap().join(" | "));
+            }
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+    });
     while let Some(outcome) = env.outcomes.recv().await {
         println!("{outcome:?} → {:?}", listing(&env.recv_dir));
     }
