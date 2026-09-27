@@ -8,6 +8,7 @@ use crate::client::{self, OutFile, SendOutcome, SendStatus, Target};
 use crate::discovery::{Device, Discovery};
 use crate::identity::{short_fingerprint, Identity};
 use crate::link::outbox::OfferEvents;
+use crate::link::remote::{self, RemoteStatus};
 use crate::link::{self, Link, LinkLimits, Phone, LINK_PORT};
 use crate::protocol::{hex, unhex};
 use crate::server::{self, Decision, IncomingRequest, Limits, Receiver, ReceiverUi, RecvOutcome};
@@ -30,6 +31,7 @@ use tokio::sync::{oneshot, Notify};
 const MAX_REMEMBERED: usize = 50;
 
 pub struct AppState {
+    app: AppHandle,
     identity: Arc<Identity>,
     data_dir: PathBuf,
     settings: Mutex<Settings>,
@@ -51,6 +53,9 @@ pub struct AppState {
     /// the bind so two quick pairings can't both try to bind the port.
     link_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     link_error: Mutex<Option<String>>,
+    /// Relay connection (ADR-003) and the URL it was started with.
+    remote_task: Mutex<Option<(JoinHandle<()>, String)>>,
+    remote_status: Arc<Mutex<Option<RemoteStatus>>>,
     /// Newest version found by the last check, ready to install.
     update: Mutex<Option<Update>>,
     updating: AtomicBool,
@@ -89,6 +94,9 @@ pub struct SettingsDto {
     /// Never includes the pairing keys.
     phones: Vec<PhoneDto>,
     link_error: Option<String>,
+    remote: bool,
+    relay_url: String,
+    remote_status: Option<RemoteStatus>,
 }
 
 #[derive(Serialize)]
@@ -353,6 +361,7 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
     }
 
     let state = AppState {
+        app: app.clone(),
         identity,
         data_dir,
         settings: Mutex::new(settings),
@@ -371,6 +380,8 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         link,
         link_task: tokio::sync::Mutex::new(None),
         link_error: Mutex::new(None),
+        remote_task: Mutex::new(None),
+        remote_status: Arc::new(Mutex::new(None)),
         update: Mutex::new(None),
         updating: AtomicBool::new(false),
     };
@@ -426,6 +437,7 @@ impl AppState {
             .collect();
         let want = !phones.is_empty();
         self.link.set_phones(phones);
+        self.sync_remote(want);
         let mut task = self.link_task.lock().await;
         if !want {
             if let Some(t) = task.take() {
@@ -456,6 +468,44 @@ impl AppState {
 
     fn online_phones(&self) -> Vec<String> {
         self.link.online_phones().iter().map(|p| hex(p)).collect()
+    }
+
+    /// Run the relay connection only while it's on, configured, and there
+    /// are phones to serve; restart it when the relay address changes.
+    fn sync_remote(&self, have_phones: bool) {
+        let (on, url, secret) = {
+            let s = self.settings.lock().expect("lock");
+            (
+                s.remote,
+                s.relay_url.clone(),
+                crate::protocol::unhex::<32>(&s.room_secret),
+            )
+        };
+        let wanted = secret.filter(|_| on && have_phones && !url.is_empty());
+        let mut task = self.remote_task.lock().expect("lock");
+        let running_here = task.as_ref().is_some_and(|(_, u)| *u == url);
+        if wanted.is_some() && running_here {
+            return;
+        }
+        if let Some((t, _)) = task.take() {
+            t.abort();
+        }
+        *self.remote_status.lock().expect("lock") = None;
+        let Some(secret) = wanted else {
+            return;
+        };
+        let (app, status) = (self.app.clone(), self.remote_status.clone());
+        let handle = tauri::async_runtime::spawn(remote::run(
+            self.link.clone(),
+            url.clone(),
+            secret,
+            link::CHUNK + 64,
+            move |st| {
+                *status.lock().expect("lock") = Some(st.clone());
+                let _ = app.emit("remote-status", st);
+            },
+        ));
+        *task = Some((handle, url));
     }
 
     /// The `.local` name mDNS announces for this computer (see discovery).
@@ -501,6 +551,9 @@ impl AppState {
                 })
                 .collect(),
             link_error: self.link_error.lock().expect("lock").clone(),
+            remote: s.remote,
+            relay_url: s.relay_url.clone(),
+            remote_status: self.remote_status.lock().expect("lock").clone(),
         }
     }
 
@@ -1020,6 +1073,36 @@ pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Resul
     #[cfg(desktop)]
     tauri_plugin_single_instance::destroy(&app);
     app.restart()
+}
+
+/// Turn "Reach from anywhere" on/off and set the relay address.
+#[tauri::command]
+pub async fn set_remote(
+    state: State<'_, AppState>,
+    enabled: bool,
+    relay_url: String,
+) -> Result<SettingsDto, String> {
+    let relay_url = settings::validate_relay_url(&relay_url)?;
+    if enabled && relay_url.is_empty() {
+        return Err("Enter the relay address first".into());
+    }
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.remote = enabled;
+        s.relay_url = relay_url;
+        if enabled && s.room_secret.is_empty() {
+            use ring::rand::{SecureRandom, SystemRandom};
+            let mut secret = [0u8; 32];
+            SystemRandom::new()
+                .fill(&mut secret)
+                .map_err(|_| "Couldn't create a room secret")?;
+            s.room_secret = hex(&secret);
+        }
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    state.sync_link().await;
+    Ok(state.settings_dto())
 }
 
 #[tauri::command]

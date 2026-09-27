@@ -102,6 +102,7 @@ pub fn run() {
             app::check_update,
             app::install_update,
             app::set_check_updates,
+            app::set_remote,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

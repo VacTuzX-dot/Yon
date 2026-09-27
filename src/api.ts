@@ -25,7 +25,16 @@ export interface Settings {
   phones: { id: string; name: string; created: number }[];
   /** Set when phones can't connect (Yon Link port busy). */
   link_error: string | null;
+  /** Reach from anywhere (ADR-003). */
+  remote: boolean;
+  relay_url: string;
+  remote_status: RemoteStatus | null;
 }
+
+export type RemoteStatus =
+  | { state: "connecting" }
+  | { state: "connected" }
+  | { state: "error"; message: string };
 
 export interface Update {
   version: string;
@@ -139,6 +148,8 @@ export const api = {
   checkUpdate: () => invoke<Update | null>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
   setCheckUpdates: (enabled: boolean) => invoke<Settings>("set_check_updates", { enabled }),
+  setRemote: (enabled: boolean, relayUrl: string) =>
+    invoke<Settings>("set_remote", { enabled, relayUrl }),
 };
 
 export interface Events {
@@ -153,6 +164,7 @@ export interface Events {
   "send-finished": { id: number; result: SendOutcome };
   "update-available": Update;
   "update-progress": { done: number; total: number | null };
+  "remote-status": RemoteStatus;
 }
 
 export function on<K extends keyof Events>(

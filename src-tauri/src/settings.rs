@@ -33,6 +33,16 @@ pub struct Settings {
     /// outside the local network). Missing in old files → true.
     #[serde(default = "default_true")]
     pub check_updates: bool,
+    /// Yon Link through a relay (ADR-003). Off unless turned on.
+    #[serde(default)]
+    pub remote: bool,
+    /// e.g. `wss://relay.example.com`.
+    #[serde(default)]
+    pub relay_url: String,
+    /// 32-byte hex; proves to the relay that this computer owns its room.
+    /// Created the first time "Reach from anywhere" is turned on.
+    #[serde(default)]
+    pub room_secret: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,6 +83,9 @@ impl Settings {
             trusted: Vec::new(),
             phones: Vec::new(),
             check_updates: true,
+            remote: false,
+            relay_url: String::new(),
+            room_secret: String::new(),
         }
     }
 
@@ -100,6 +113,12 @@ impl Settings {
                         && crate::protocol::unhex::<32>(&p.key).is_some()
                 });
                 s.phones.truncate(MAX_PHONES);
+                if crate::protocol::unhex::<32>(&s.room_secret).is_none() {
+                    s.room_secret.clear();
+                }
+                if validate_relay_url(&s.relay_url).is_err() {
+                    s.relay_url.clear();
+                }
                 s
             }
             Err(e) => {
@@ -168,6 +187,31 @@ pub fn validate_name(raw: &str) -> Result<String, &'static str> {
     Ok(name.to_string())
 }
 
+/// `wss://host[:port]`, or `ws://` for a relay on this machine (testing).
+/// Empty means "not set".
+pub fn validate_relay_url(raw: &str) -> Result<String, &'static str> {
+    let url = raw.trim().trim_end_matches('/');
+    if url.is_empty() {
+        return Ok(String::new());
+    }
+    let rest = if let Some(r) = url.strip_prefix("wss://") {
+        r
+    } else if let Some(r) = url.strip_prefix("ws://") {
+        let host = r.split([':', '/']).next().unwrap_or("");
+        if !matches!(host, "localhost" | "127.0.0.1") {
+            return Err("Use a wss:// address (ws:// only for a relay on this computer)");
+        }
+        r
+    } else {
+        return Err("The relay address starts with wss://");
+    };
+    let host = rest.split(['/', ':']).next().unwrap_or("");
+    if host.is_empty() || url.len() > 200 || !url.chars().all(|c| c.is_ascii_graphic()) {
+        return Err("That isn't a valid relay address");
+    }
+    Ok(url.to_string())
+}
+
 pub fn validate_port(port: u16) -> Result<u16, &'static str> {
     if port < 1024 {
         return Err("Port must be between 1024 and 65535");
@@ -196,6 +240,9 @@ mod tests {
             close_to_tray: false,
             show_in_dock: false,
             check_updates: false,
+            remote: true,
+            relay_url: "wss://relay.example.com".into(),
+            room_secret: "ef".repeat(32),
             phones: vec![PairedPhone {
                 id: "ab".repeat(16),
                 key: "cd".repeat(32),
@@ -210,6 +257,23 @@ mod tests {
         s.save(&dir).unwrap();
         assert_eq!(Settings::load(&dir, dl), s);
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn relay_urls_must_be_wss_or_local() {
+        assert_eq!(
+            validate_relay_url(" wss://r.example.com/ "),
+            Ok("wss://r.example.com".into())
+        );
+        assert_eq!(
+            validate_relay_url("ws://localhost:8787"),
+            Ok("ws://localhost:8787".into())
+        );
+        assert_eq!(validate_relay_url(""), Ok(String::new()));
+        assert!(validate_relay_url("ws://192.168.1.5:8787").is_err());
+        assert!(validate_relay_url("http://r.example.com").is_err());
+        assert!(validate_relay_url("wss://").is_err());
+        assert!(validate_relay_url("wss://a b").is_err());
     }
 
     #[test]

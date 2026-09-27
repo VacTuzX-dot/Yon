@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { api, errorText, isMac, type AppState, type Update } from "../api";
+import { api, errorText, isMac, type AppState, type RemoteStatus, type Update } from "../api";
 import PairPhoneSheet from "./PairPhoneSheet";
 
 interface Props {
@@ -16,6 +16,7 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState(false);
   const [checking, setChecking] = useState<"idle" | "busy" | "latest">("idle");
+  const [relayUrl, setRelayUrl] = useState(state.settings.relay_url);
   useEffect(() => ref.current?.showModal(), []);
 
   async function save(e: FormEvent) {
@@ -63,6 +64,16 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
     setError(null);
     try {
       const settings = await api.unpairPhone(id);
+      onChange({ ...state, settings });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function setRemote(enabled: boolean) {
+    setError(null);
+    try {
+      const settings = await api.setRemote(enabled, relayUrl);
       onChange({ ...state, settings });
     } catch (err) {
       setError(errorText(err));
@@ -195,6 +206,29 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
             </ul>
           )}
           {state.settings.link_error && <p className="hint bad">{state.settings.link_error}</p>}
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={state.settings.remote}
+              onChange={(e) => setRemote(e.target.checked)}
+            />
+            <span>
+              Reach from anywhere
+              <span className="hint">
+                Phones can send and receive away from this Wi-Fi, through a relay that only
+                passes on encrypted data.
+              </span>
+            </span>
+          </label>
+          <input
+            aria-label="Relay address"
+            placeholder="wss://relay.example.com"
+            value={relayUrl}
+            spellCheck={false}
+            onChange={(e) => setRelayUrl(e.target.value)}
+            onBlur={() => relayUrl !== state.settings.relay_url && setRemote(state.settings.remote)}
+          />
+          {state.settings.remote && <RemoteLine status={state.settings.remote_status} />}
           <button type="button" className="quiet pair-button" onClick={() => setPairing(true)}>
             Pair a phone
           </button>
@@ -263,4 +297,11 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
       )}
     </dialog>
   );
+}
+
+function RemoteLine({ status }: { status: RemoteStatus | null }) {
+  if (!status) return <p className="hint">Starts when a phone is paired.</p>;
+  if (status.state === "connected") return <p className="hint">Connected to the relay.</p>;
+  if (status.state === "connecting") return <p className="hint">Connecting to the relay…</p>;
+  return <p className="hint bad">Relay: {status.message}</p>;
 }

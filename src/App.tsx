@@ -70,6 +70,9 @@ export default function App() {
       on("incoming", (req) => setIncoming(req)),
       on("shared", () => takeShared()),
       on("update-available", (u) => setUpdate(u)),
+      on("remote-status", (remote_status) =>
+        setState((s) => (s ? { ...s, settings: { ...s.settings, remote_status } } : s)),
+      ),
       on("recv-started", (r) =>
         setReceiving((list) => [...list, { id: r.id, from: r.sender_name, done: 0, total: r.total }]),
       ),
