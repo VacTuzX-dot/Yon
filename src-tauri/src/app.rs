@@ -474,7 +474,7 @@ pub fn send(
     let identity = state.identity.clone();
     let name = state.settings.lock().expect("lock").device_name.clone();
     let target = Target {
-        addr: SocketAddr::V4(device.addr),
+        addrs: device.addrs.iter().copied().map(SocketAddr::V4).collect(),
         fingerprint: device.fingerprint,
     };
 

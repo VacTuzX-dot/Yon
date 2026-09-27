@@ -18,12 +18,15 @@ use tokio::time::timeout;
 use tokio_rustls::TlsConnector;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Per candidate address; a black-holed VPN route shouldn't stall the rest.
+const TCP_TIMEOUT: Duration = Duration::from_secs(3);
 /// Receiver auto-declines after 60s; allow for network slack.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(75);
 
 #[derive(Clone, Debug)]
 pub struct Target {
-    pub addr: SocketAddr,
+    /// Tried in order until one both connects and proves the pinned key.
+    pub addrs: Vec<SocketAddr>,
     pub fingerprint: Fingerprint,
 }
 
@@ -92,21 +95,9 @@ async fn run(
         Ok(c) => c,
         Err(e) => return failed(e),
     };
-    let tcp = match timeout(CONNECT_TIMEOUT, TcpStream::connect(target.addr)).await {
-        Ok(Ok(t)) => t,
-        Ok(Err(e)) => return failed(format!("could not reach device: {e}")),
-        Err(_) => return failed("could not reach device: timed out"),
-    };
-    let _ = tcp.set_nodelay(true);
-    let tls = match timeout(
-        CONNECT_TIMEOUT,
-        TlsConnector::from(config).connect(server_name(), tcp),
-    )
-    .await
-    {
-        Ok(Ok(t)) => t,
-        Ok(Err(e)) => return failed(format!("secure connection failed: {e}")),
-        Err(_) => return failed("secure connection timed out"),
+    let tls = match connect_any(&target.addrs, config).await {
+        Ok(t) => t,
+        Err(e) => return failed(e),
     };
     let (mut rd, mut wr) = split(tls);
 
@@ -205,6 +196,36 @@ async fn run(
             }
         }
     }
+}
+
+/// Try each candidate address. A TCP connect that works but fails the pin
+/// means some *other* host owns that address on this network — keep going.
+async fn connect_any(
+    addrs: &[SocketAddr],
+    config: std::sync::Arc<tokio_rustls::rustls::ClientConfig>,
+) -> Result<tokio_rustls::client::TlsStream<TcpStream>, String> {
+    let mut last = String::from("could not reach device: no address");
+    for addr in addrs {
+        let tcp = match timeout(TCP_TIMEOUT, TcpStream::connect(addr)).await {
+            Ok(Ok(t)) => t,
+            Ok(Err(e)) => {
+                last = format!("could not reach device: {e}");
+                continue;
+            }
+            Err(_) => {
+                last = "could not reach device: timed out".into();
+                continue;
+            }
+        };
+        let _ = tcp.set_nodelay(true);
+        let connector = TlsConnector::from(config.clone());
+        match timeout(CONNECT_TIMEOUT, connector.connect(server_name(), tcp)).await {
+            Ok(Ok(tls)) => return Ok(tls),
+            Ok(Err(e)) => last = format!("secure connection failed: {e}"),
+            Err(_) => last = "secure connection timed out".into(),
+        }
+    }
+    Err(last)
 }
 
 fn early_reply(frame: Frame) -> SendOutcome {

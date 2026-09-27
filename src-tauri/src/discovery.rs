@@ -22,7 +22,8 @@ pub struct Device {
     pub compatible: bool,
     pub short_fingerprint: String,
     #[serde(skip)]
-    pub addr: SocketAddrV4,
+    /// Candidate addresses, best first (see [`rank`]). Tried in order.
+    pub addrs: Vec<SocketAddrV4>,
     #[serde(skip)]
     pub fingerprint: Fingerprint,
 }
@@ -129,12 +130,20 @@ pub fn device_from(
     let id = props("id")?.to_ascii_lowercase();
     let get = |k: &str| props(k).unwrap_or_default();
     let fingerprint = parse_fingerprint(&id)?;
-    // Only addresses we'd accept connections from ourselves.
-    let ip = addrs
+    // Only addresses we'd accept connections from ourselves; a device can
+    // advertise several (Wi-Fi + Ethernet + VPN + Docker…), so keep a few
+    // candidates in a stable order and let the sender try them in turn.
+    let mut ips: Vec<Ipv4Addr> = addrs
         .iter()
         .copied()
         .filter(|ip| crate::server::is_allowed_peer(&SocketAddr::from((*ip, port))))
-        .min_by_key(|ip| ip.is_loopback())?;
+        .collect();
+    ips.sort_by_key(|ip| (rank(ip), *ip));
+    ips.dedup();
+    ips.truncate(MAX_CANDIDATES);
+    if ips.is_empty() {
+        return None;
+    }
     let v = props("v").and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
     Some(Device {
         short_fingerprint: short_fingerprint(&fingerprint),
@@ -142,10 +151,28 @@ pub fn device_from(
         os: clean(&get("os"), 16),
         app: clean(&get("app"), 16),
         compatible: v == PROTOCOL_VERSION,
-        addr: SocketAddrV4::new(ip, port),
+        addrs: ips
+            .into_iter()
+            .map(|ip| SocketAddrV4::new(ip, port))
+            .collect(),
         fingerprint,
         id,
     })
+}
+
+const MAX_CANDIDATES: usize = 4;
+
+/// Lower = tried first. Home/office LANs are usually 192.168/16; 10/8 is
+/// common for both LANs and VPNs; 172.16/12 is mostly Docker/VM bridges;
+/// link-local and loopback are last resorts.
+fn rank(ip: &Ipv4Addr) -> u8 {
+    match ip.octets() {
+        [192, 168, ..] => 0,
+        [10, ..] => 1,
+        [172, b, ..] if (16..32).contains(&b) => 2,
+        [169, 254, ..] => 3,
+        _ => 4, // loopback
+    }
 }
 
 fn clean_name(s: &str) -> String {
@@ -184,7 +211,7 @@ mod tests {
         assert!(d.compatible);
         assert_eq!(d.name, "Leo's Mac");
         assert_eq!(d.short_fingerprint, "A1B2-C3D4-E5F6-0718");
-        assert_eq!(d.addr, "192.168.1.9:53420".parse().unwrap());
+        assert_eq!(d.addrs, vec!["192.168.1.9:53420".parse().unwrap()]);
     }
 
     #[test]
@@ -214,7 +241,32 @@ mod tests {
         let m = HashMap::from([("v", "1"), ("id", ID), ("name", "\u{1b}[31mEvil\n")]);
         let addrs = [Ipv4Addr::LOCALHOST, Ipv4Addr::new(192, 168, 0, 7)];
         let d = device_from(&props(&m), &addrs, 1).unwrap();
-        assert_eq!(*d.addr.ip(), Ipv4Addr::new(192, 168, 0, 7));
+        assert_eq!(*d.addrs[0].ip(), Ipv4Addr::new(192, 168, 0, 7));
         assert_eq!(d.name, "[31mEvil");
+    }
+
+    #[test]
+    fn orders_multiple_interfaces_deterministically() {
+        let m = HashMap::from([("v", "1"), ("id", ID)]);
+        let addrs = [
+            Ipv4Addr::LOCALHOST,
+            Ipv4Addr::new(172, 17, 0, 1),   // docker bridge
+            Ipv4Addr::new(8, 8, 8, 8),      // public: never a candidate
+            Ipv4Addr::new(10, 8, 0, 2),     // VPN
+            Ipv4Addr::new(192, 168, 1, 20), // Wi-Fi
+            Ipv4Addr::new(192, 168, 1, 5),  // Ethernet
+            Ipv4Addr::new(192, 168, 1, 5),  // duplicate
+        ];
+        let d = device_from(&props(&m), &addrs, 7).unwrap();
+        let got: Vec<String> = d.addrs.iter().map(|a| a.to_string()).collect();
+        assert_eq!(
+            got,
+            [
+                "192.168.1.5:7",
+                "192.168.1.20:7",
+                "10.8.0.2:7",
+                "172.17.0.1:7"
+            ]
+        );
     }
 }

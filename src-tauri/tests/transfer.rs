@@ -104,7 +104,7 @@ async fn setup(tag: &str, mode: Mode, limits: Limits) -> Env {
     let port = listener.local_addr().unwrap().port();
     tokio::spawn(receiver.clone().serve(listener));
     let target = Target {
-        addr: ([127, 0, 0, 1], port).into(),
+        addrs: vec![([127, 0, 0, 1], port).into()],
         fingerprint: identity.fingerprint,
     };
     Env {
@@ -361,10 +361,46 @@ async fn wrong_pin_refuses_to_send() {
     assert_eq!(env.ui.asked.load(Ordering::SeqCst), 0);
 }
 
+#[tokio::test]
+async fn falls_through_dead_and_wrong_candidates() {
+    let mut env = setup("multinic", Mode::Accept, Limits::default()).await;
+    // A closed port (refused) and a *different* Yon device (pin mismatch)
+    // come first, like a stale VPN address and a Docker neighbour.
+    let closed = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let closed_addr = closed.local_addr().unwrap();
+    drop(closed);
+    let other = setup("multinic-other", Mode::Accept, Limits::default()).await;
+    let target = Target {
+        addrs: vec![closed_addr, other.target.addrs[0], env.target.addrs[0]],
+        ..env.target.clone()
+    };
+    let files = vec![make_file(&env.src_dir, "x.txt", b"x")];
+    let out = client::send(
+        &env.sender,
+        "T",
+        "macos",
+        &target,
+        &files,
+        Arc::new(Notify::new()),
+        &mut |_| {},
+    )
+    .await;
+    assert_eq!(out, SendOutcome::Completed);
+    assert!(matches!(
+        next(&mut env).await,
+        RecvOutcome::Completed { .. }
+    ));
+    assert_eq!(
+        other.ui.asked.load(Ordering::SeqCst),
+        0,
+        "wrong device must never see the request"
+    );
+}
+
 /// Hand-rolled sender that misbehaves after Accept.
 async fn raw_send(env: &Env, declared: u64, body: &[u8], sha: &str) -> Frame {
     let cfg = env.sender.client_config(env.target.fingerprint).unwrap();
-    let tcp = tokio::net::TcpStream::connect(env.target.addr)
+    let tcp = tokio::net::TcpStream::connect(env.target.addrs[0])
         .await
         .unwrap();
     let tls = tokio_rustls::TlsConnector::from(cfg)
