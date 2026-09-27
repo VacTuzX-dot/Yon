@@ -1,7 +1,9 @@
 //! Receiver: accepts LAN connections, asks the user, streams files to disk.
 
 use crate::identity::{peer_fingerprint, Fingerprint, Identity};
-use crate::protocol::{read_frame, write_frame, Frame, ProtoError, PROTOCOL_VERSION};
+use crate::protocol::{
+    read_frame, write_frame, Frame, ProtoError, TransferRequest, PROTOCOL_VERSION,
+};
 use crate::sanitize::sanitize_file_name;
 use crate::transfer::{recv_body, Reserved, IDLE_TIMEOUT};
 use crate::{platform, Throttle};
@@ -218,71 +220,31 @@ impl Receiver {
             Frame::Request(r) => r,
             _ => return Err(ProtoError::Unexpected("expected request")),
         };
-        let total = match req.validate() {
-            Ok(t) => t,
-            Err(e) => {
-                let reason = e.to_string();
-                write_frame(&mut wr, &Frame::Failed { reason }).await?;
-                return Err(e);
-            }
-        };
-
         let ip = match addr {
             SocketAddr::V4(a) => *a.ip(),
             SocketAddr::V6(_) => return Err(ProtoError::Unexpected("ipv6")),
         };
-        if self.in_cooldown(ip) {
-            return write_frame(&mut wr, &Frame::Decline).await;
-        }
-        let save_dir = self.save_dir.read().expect("lock").clone();
-        std::fs::create_dir_all(&save_dir)?;
-        let free = platform::free_space(&save_dir).unwrap_or(u64::MAX);
-        if free < total.saturating_add(self.limits.disk_headroom) {
-            return write_frame(&mut wr, &Frame::InsufficientSpace).await;
-        }
-
-        // One transfer at a time (pending dialog counts).
-        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let cancel = Arc::new(Notify::new());
-        let busy = {
-            let mut active = self.active.lock().expect("lock");
-            let busy = active.is_some();
-            if !busy {
-                *active = Some((id, cancel.clone()));
+        let admission = match self.admit(&req, ip, fingerprint) {
+            Ok(a) => a,
+            Err(refusal) => {
+                let frame = match refusal {
+                    Refusal::Invalid(reason) => Frame::Failed { reason },
+                    Refusal::Declined => Frame::Decline,
+                    Refusal::InsufficientSpace => Frame::InsufficientSpace,
+                    Refusal::Busy => Frame::Busy,
+                };
+                return write_frame(&mut wr, &frame).await;
             }
-            busy
         };
-        if busy {
-            return write_frame(&mut wr, &Frame::Busy).await;
-        }
-        let _guard = ActiveGuard(&self.active);
         // Past the queue: this connection no longer counts as "pending".
         drop(slot);
-
-        let files: Vec<_> = req
-            .files
-            .iter()
-            .map(|f| {
-                let name = sanitize_file_name(&f.name);
-                IncomingFile {
-                    renamed: name != f.name,
-                    name,
-                    size: f.size,
-                }
-            })
-            .collect();
-        let incoming = IncomingRequest {
-            id,
-            // Display-only and spoofable; the fingerprint is the real identity.
-            sender_name: match crate::sanitize::clean_display(&req.name, 63) {
-                n if n.is_empty() => "Unknown device".to_string(),
-                n => n,
-            },
-            sender_os: req.os.clone(),
-            fingerprint,
-            files: files.clone(),
-            total,
-        };
+        let Admission {
+            incoming,
+            save_dir,
+            cancel,
+            guard: _guard,
+        } = admission;
+        let (id, total, files) = (incoming.id, incoming.total, incoming.files.clone());
 
         // Wait for the user, but notice if the sender gives up meanwhile:
         // after Request the sender must stay silent, so any read = gone.
@@ -375,6 +337,84 @@ impl Receiver {
         Ok(())
     }
 
+    /// The one gate every incoming transfer passes, whatever the transport:
+    /// structural validation, decline cooldown, free space, the single busy
+    /// slot, and file/sender name sanitizing.
+    pub fn admit(
+        self: &Arc<Self>,
+        req: &TransferRequest,
+        ip: Ipv4Addr,
+        fingerprint: Fingerprint,
+    ) -> Result<Admission, Refusal> {
+        let total = req
+            .validate()
+            .map_err(|e| Refusal::Invalid(e.to_string()))?;
+        if self.in_cooldown(ip) {
+            return Err(Refusal::Declined);
+        }
+        let save_dir = self.save_dir.read().expect("lock").clone();
+        std::fs::create_dir_all(&save_dir)
+            .map_err(|e| Refusal::Invalid(format!("can't use save folder: {e}")))?;
+        let free = platform::free_space(&save_dir).unwrap_or(u64::MAX);
+        if free < total.saturating_add(self.limits.disk_headroom) {
+            return Err(Refusal::InsufficientSpace);
+        }
+
+        // One transfer at a time (a pending dialog counts).
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let cancel = Arc::new(Notify::new());
+        {
+            let mut active = self.active.lock().expect("lock");
+            if active.is_some() {
+                return Err(Refusal::Busy);
+            }
+            *active = Some((id, cancel.clone()));
+        }
+        let guard = ActiveGuard {
+            rx: self.clone(),
+            id,
+        };
+
+        let files = req
+            .files
+            .iter()
+            .map(|f| {
+                let name = sanitize_file_name(&f.name);
+                IncomingFile {
+                    renamed: name != f.name,
+                    name,
+                    size: f.size,
+                }
+            })
+            .collect();
+        let incoming = IncomingRequest {
+            id,
+            // Display-only and spoofable; the fingerprint is the real identity.
+            sender_name: match crate::sanitize::clean_display(&req.name, 63) {
+                n if n.is_empty() => "Unknown device".to_string(),
+                n => n,
+            },
+            sender_os: crate::sanitize::clean_display(&req.os, 16),
+            fingerprint,
+            files,
+            total,
+        };
+        Ok(Admission {
+            incoming,
+            save_dir,
+            cancel,
+            guard,
+        })
+    }
+
+    pub fn ui(&self) -> &Arc<dyn ReceiverUi> {
+        &self.ui
+    }
+
+    pub fn limits(&self) -> &Limits {
+        &self.limits
+    }
+
     fn in_cooldown(&self, ip: Ipv4Addr) -> bool {
         let mut map = self.cooldown.lock().expect("lock");
         let now = Instant::now();
@@ -384,21 +424,46 @@ impl Receiver {
 
     // TECH DEBT: per-IP cooldown is bypassable by changing IP on the LAN;
     // the real fix is Phase 2 "trusted devices only" mode.
-    fn start_cooldown(&self, ip: Ipv4Addr) {
+    pub fn start_cooldown(&self, ip: Ipv4Addr) {
         let until = Instant::now() + self.limits.decline_cooldown;
         self.cooldown.lock().expect("lock").insert(ip, until);
     }
 }
 
-/// Clears the "busy" slot however `handle` exits.
-struct ActiveGuard<'a>(&'a Mutex<Option<(u64, Arc<Notify>)>>);
+/// Holds the single "busy" slot for one transfer; dropping it frees the
+/// slot. Owns an `Arc` so a transfer can span several connections (Yon Link).
+pub struct ActiveGuard {
+    rx: Arc<Receiver>,
+    id: u64,
+}
 
-impl Drop for ActiveGuard<'_> {
+impl Drop for ActiveGuard {
     fn drop(&mut self) {
-        if let Ok(mut a) = self.0.lock() {
-            *a = None;
+        if let Ok(mut a) = self.rx.active.lock() {
+            // Only clear our own slot.
+            if a.as_ref().is_some_and(|(id, _)| *id == self.id) {
+                *a = None;
+            }
         }
     }
+}
+
+/// Why a request was turned away before anyone was asked.
+#[derive(Debug)]
+pub enum Refusal {
+    Invalid(String),
+    /// Recently declined from this address (cooldown).
+    Declined,
+    InsufficientSpace,
+    Busy,
+}
+
+/// A request that passed every check and now owns the busy slot.
+pub struct Admission {
+    pub incoming: IncomingRequest,
+    pub save_dir: PathBuf,
+    pub cancel: Arc<Notify>,
+    pub guard: ActiveGuard,
 }
 
 enum RecvError {
