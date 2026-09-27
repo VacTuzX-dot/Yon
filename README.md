@@ -18,6 +18,7 @@ Yon is a small, open-source desktop app for sending files between computers on t
 - Large files are streamed, so a 1 GB file uses a few MB of memory, and every file is checked with SHA-256 when it arrives.
 - Received files go to `Downloads/Yon` (you can change this). Existing files are never overwritten: you get `photo (1).jpg` instead.
 - Send from your file manager: on Windows, right-click → **Send to → Yon**; on macOS, use **Share → Yon** (from Finder or any app), **Open With → Yon**, or drop files on Yon's Dock icon. Yon asks which device to send to.
+- Send from your phone with **Yon Link**, no app to install (see below).
 - Stays ready in the background: on macOS, closing the window (⌘W) keeps Yon in the menu bar; on Windows, closing sends it to the tray (turn this off in Settings). On macOS you can also hide the Dock icon in Settings to keep Yon in the menu bar only. Quit from the menu bar / tray icon, or ⌘Q on macOS.
 
 ## Install
@@ -34,6 +35,20 @@ The builds are not code-signed yet, so your OS will warn you the first time.
 **macOS:** open the `.dmg`, drag Yon to Applications, then right-click Yon → **Open** → **Open**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
 
 **Windows:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
+
+### Send from your phone (Yon Link)
+
+iPhone and Android phones send photos and files to your computer through a small web page that Yon serves on your Wi-Fi. There's nothing to install from an app store.
+
+1. On the computer: **Settings → Phones → Pair a phone**, give the phone a name, and a QR code appears.
+2. On the phone: open the Camera, scan the code, and tap the link. The phone must be on the same Wi-Fi.
+3. Tap Share → **Add to Home Screen** (Android: menu ⋮ → Add to Home screen).
+
+From then on, tap the Yon icon on your phone, choose photos or files, and accept on the computer. You only scan once. If the link doesn't open (some Android phones can't use `.local` names), tap "Link doesn't open?" under the QR code for a code that uses the computer's IP address instead.
+
+Keep the phone's screen on while a big file is sending. If the phone locks, the upload continues from where it stopped when you come back, as long as it's within about 5 minutes.
+
+For now, phones can send to the computer but not receive.
 
 ### Verify the download
 
@@ -53,6 +68,7 @@ On Windows (PowerShell), compare the output of `Get-FileHash .\Yon_x.y.z_x64-set
 - Received files are marked as downloaded (macOS quarantine / Windows Mark-of-the-Web), so the OS still checks them when opened.
 - Yon only accepts connections from private network addresses.
 - While Yon is running (including in the menu bar / tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
+- **Yon Link (phones) is less protected than the app.** The phone page is plain `http` on your LAN, because browsers only allow secure pages to talk to local devices with a trusted certificate. Every request after the page loads is encrypted and authenticated with the phone's pairing key (ChaCha20-Poly1305), so other people on the Wi-Fi can't read or fake uploads. But someone able to tamper with your Wi-Fi traffic could change the page itself and steal the pairing key. Requests from phones are labelled "web link", and you still accept each one unless you chose "Always accept". The pairing key is in the QR code and the phone's saved link, so treat them like a password. Remove a phone in Settings to cut it off at once. Yon Link only listens (on port 53421) while at least one phone is paired. Details: [threat model](docs/threat-model-yon-link.md), [ADR-001](docs/adr/ADR-001-yon-link-web-mode.md).
 
 Known limits of this version: IPv4 only, the key is stored as a file in the app's data folder (not in the system keychain), and there is no mode that ignores unknown devices entirely yet.
 
@@ -64,6 +80,8 @@ Requirements: [Bun](https://bun.sh) ≥ 1.3, [Rust](https://rustup.rs) (stable),
 bun install
 bun tauri dev
 ```
+
+`bun run build` and `bun run dev` also build the phone page (`web/`) into `src-tauri/link-dist/`, which the Rust binary embeds. If you run `cargo` directly on a fresh checkout, run `bun run build:link` once first.
 
 Run two instances on one machine (each needs its own identity and data folder):
 
@@ -85,6 +103,18 @@ bun run typecheck && bun run lint
 
 ```bash
 cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
+```
+
+```bash
+bun run test
+```
+
+`bun run test` checks that the phone page's encryption matches the Rust side byte for byte (shared vectors in `web/crypto-vectors.json`).
+
+To try the phone page in a desktop browser against a real Link server (it auto-accepts and prints a pairing URL):
+
+```bash
+bun run build:link && cd src-tauri && cargo test --test link -- --ignored serve_page_for_browser --nocapture
 ```
 
 The 1 GB end-to-end transfer test is opt-in:
@@ -123,15 +153,17 @@ src-tauri/src/
   sanitize.rs        file name cleaning
   settings.rs        settings file
   platform.rs        OS-specific helpers
+  link/              Yon Link: phone web page server, HTTP framing, session crypto
+web/                 phone page (vanilla TS, built by scripts/build-link.ts)
 src-tauri/macos/     "Share → Yon" extension (Swift, built by build-share.sh)
 src-tauri/windows/   installer hooks (Send To shortcut)
-src-tauri/tests/     end-to-end transfer tests over TLS
+src-tauri/tests/     end-to-end tests: transfers over TLS, a fake phone over Yon Link
 ```
 
 ## Roadmap
 
-- **Next:** drag and drop, send folders, send text / clipboard, transfer history, tray icon, trusted devices.
-- **Later:** transfers across networks (via [iroh](https://iroh.computer)), optional LocalSend compatibility, mobile apps.
+- **Next:** drag and drop, send folders, send text / clipboard, transfer history, computer → phone over Yon Link.
+- **Later:** transfers across networks (via [iroh](https://iroh.computer)), optional LocalSend compatibility, native mobile apps.
 
 ## License
 
