@@ -376,6 +376,7 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
     };
     let port = state.settings.lock().expect("lock").port;
     tauri::async_runtime::block_on(state.switch_listener(port))?;
+    state.link.set_relay_dir(state.data_dir.join("relay"));
     tauri::async_runtime::block_on(state.sync_link());
     let presence_app = app.clone();
     state.link.set_presence_listener(Arc::new(move || {

@@ -102,6 +102,9 @@ class Session {
 const ui = {
   subtitle: el("subtitle"),
   pick: el("pick"),
+  choose: el("choose"),
+  targets: el("targets"),
+  chooseCancel: el<HTMLButtonElement>("choose-cancel"),
   incoming: el("incoming"),
   offerText: el("offer-text"),
   offerFiles: el("offer-files"),
@@ -121,7 +124,7 @@ const ui = {
 };
 
 function show(section: HTMLElement) {
-  for (const s of [ui.pick, ui.incoming, ui.busy, ui.end]) s.hidden = s !== section;
+  for (const s of [ui.pick, ui.choose, ui.incoming, ui.busy, ui.end]) s.hidden = s !== section;
 }
 
 function finish(text: string, tone: "ok" | "bad", button: string, action: () => void) {
@@ -181,8 +184,12 @@ async function retrying<T>(job: { cancelled: boolean }, fn: () => Promise<T>): P
   }
 }
 
-async function send(files: File[]) {
+/** Another paired phone with Yon open; the computer relays to it. */
+type Target = { id: string; name: string };
+
+async function send(files: File[], to?: Target) {
   if (!pairing || files.length === 0) return;
+  const dest = to?.name ?? computer;
   ui.status.textContent = "Connecting…";
   ui.detail.textContent = "";
   ui.fill.style.width = "0%";
@@ -195,15 +202,17 @@ async function send(files: File[]) {
     job = current = { session, cancelled: false };
     computer = session.computer;
 
-    ui.status.textContent = `Waiting for ${computer} to accept…`;
+    ui.status.textContent = to ? `Sending to ${dest}…` : `Waiting for ${computer} to accept…`;
     const meta = files.map((f) => ({ name: f.name, size: f.size }));
-    const answer = await session.call("/request", utf8ToBytes(JSON.stringify({ files: meta })));
-    if (answer.result !== "accepted") return refused(answer);
+    const body = to ? { files: meta, to: to.id } : { files: meta };
+    const answer = await session.call("/request", utf8ToBytes(JSON.stringify(body)));
+    if (answer.result !== "accepted") return refused(answer, dest);
 
     const chunk = answer.chunk ?? 1 << 20;
     const total = files.reduce((n, f) => n + f.size, 0);
     const before = (f: number) => files.slice(0, f).reduce((n, x) => n + x.size, 0);
-    ui.status.textContent = files.length === 1 ? `Sending ${files[0].name}` : `Sending ${files.length} files`;
+    ui.status.textContent =
+      files.length === 1 ? `Sending ${files[0].name} to ${dest}` : `Sending ${files.length} files to ${dest}`;
 
     let f = 0;
     let i = 0;
@@ -234,7 +243,14 @@ async function send(files: File[]) {
       i = done.next!;
     }
     const n = files.length === 1 ? "1 file" : `${files.length} files`;
-    finish(`Sent ${n} to ${computer}.`, "ok", "Send more", pickAgain);
+    finish(
+      to
+        ? `Sent ${n}. ${dest} will be asked to receive ${files.length === 1 ? "it" : "them"}.`
+        : `Sent ${n} to ${computer}.`,
+      "ok",
+      "Send more",
+      pickAgain,
+    );
   } catch (e) {
     if (job?.cancelled) return;
     if (e instanceof Gone) {
@@ -254,11 +270,13 @@ async function send(files: File[]) {
   }
 }
 
-function refused(r: Reply) {
+function refused(r: Reply, dest: string) {
   const text: Record<string, string> = {
-    declined: `${computer} declined.`,
+    declined: `${dest} declined.`,
     busy: `${computer} is busy with another transfer. Try again in a moment.`,
     insufficient_space: `Not enough free space on ${computer}.`,
+    unavailable: `${dest} isn't available. Ask them to open Yon on their phone.`,
+    too_big: "Phones can receive up to 1 GB at a time. Send fewer files.",
   };
   finish(text[r.result] ?? `Can't send: ${r.reason ?? r.result}.`, "bad", "Send something else", pickAgain);
 }
@@ -489,8 +507,37 @@ function showSaved(files: { name: string; blob: Blob }[]) {
 ui.input.addEventListener("change", () => {
   const files = Array.from(ui.input.files ?? []);
   ui.input.value = ""; // picking the same files again still fires `change`
-  void send(files);
+  if (files.length > 0) void chooseTarget(files);
 });
+
+/** Other phones with Yon open can be picked too; otherwise straight to the computer. */
+async function chooseTarget(files: File[]) {
+  let phones: Target[] = [];
+  try {
+    const r = (await withListener((s) => s.call("/peers"))) as unknown as { phones?: unknown };
+    if (Array.isArray(r.phones)) {
+      phones = r.phones.filter(
+        (p): p is Target => typeof p?.id === "string" && /^[0-9a-f]{16}$/.test(p.id) && typeof p?.name === "string",
+      );
+    }
+  } catch {
+    // can't list phones: the computer is still a fine default
+  }
+  if (phones.length === 0) return void send(files);
+  const button = (label: string, go: () => void) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.textContent = label;
+    b.onclick = go;
+    return b;
+  };
+  ui.targets.replaceChildren(
+    button(`${computer} (this computer)`, () => void send(files)),
+    ...phones.map((p) => button(p.name, () => void send(files, p))),
+  );
+  ui.chooseCancel.onclick = pickAgain;
+  show(ui.choose);
+}
 
 ui.cancel.addEventListener("click", () => {
   const job = current;

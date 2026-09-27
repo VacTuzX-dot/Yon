@@ -112,6 +112,8 @@ pub struct Link {
     /// Last request per phone, for "online" in the device list.
     seen: Mutex<HashMap<[u8; 16], Instant>>,
     on_presence: RwLock<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// Holds phone → phone files between upload and download.
+    relay_root: RwLock<PathBuf>,
 }
 
 struct Session {
@@ -133,6 +135,9 @@ struct Upload {
     saved: Vec<PathBuf>,
     done_bytes: u64,
     throttle: Throttle,
+    /// Phone ↔ phone: stored in a relay folder, then offered to this phone
+    /// instead of landing in the desktop's save folder.
+    relay_to: Option<[u8; 16]>,
 }
 
 struct Writing {
@@ -146,6 +151,29 @@ struct Writing {
 #[derive(Deserialize)]
 struct RequestBody {
     files: Vec<FileMeta>,
+    /// Another paired phone (a handle from `/peers`); absent = this computer.
+    #[serde(default)]
+    to: Option<String>,
+}
+
+/// Relay offers get ids in their own range (below 2^53 so the page can
+/// hold them as numbers) so they never collide with desktop send ids.
+const RELAY_ID_BASE: u64 = 1 << 52;
+
+/// Name other phones see for a phone: derived from its fingerprint, so the
+/// pairing id itself is never shown to other phones.
+fn phone_handle(id: &[u8; 16]) -> String {
+    hex(&phone_fingerprint(id)[..8])
+}
+
+/// Deletes a relayed transfer's folder once the receiving phone is done.
+struct RelayCleanup(PathBuf);
+
+impl OfferEvents for RelayCleanup {
+    fn status(&self, _: SendStatus) {}
+    fn finished(&self, _: SendOutcome) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 impl Link {
@@ -163,7 +191,15 @@ impl Link {
             inbox: tokio::sync::Notify::new(),
             seen: Mutex::new(HashMap::new()),
             on_presence: RwLock::new(None),
+            relay_root: RwLock::new(std::env::temp_dir().join("yon-relay")),
         })
+    }
+
+    /// Where relayed files wait. Anything left from an earlier run is
+    /// removed: those transfers can't finish any more.
+    pub fn set_relay_dir(&self, dir: PathBuf) {
+        let _ = std::fs::remove_dir_all(&dir);
+        *self.relay_root.write().expect("lock") = dir;
     }
 
     /// Replace the paired phones. Sessions of removed phones end at once.
@@ -203,10 +239,22 @@ impl Link {
         files: Vec<OutFile>,
         events: Arc<dyn OfferEvents>,
     ) -> Result<(), String> {
+        self.add_offer(id, phone, files, events, None)
+    }
+
+    fn add_offer(
+        &self,
+        id: u64,
+        phone: [u8; 16],
+        files: Vec<OutFile>,
+        events: Arc<dyn OfferEvents>,
+        from: Option<String>,
+    ) -> Result<(), String> {
         if !self.phones.read().expect("lock").contains_key(&phone) {
             return Err("That phone isn't paired any more".into());
         }
-        let offer = Offer::new(id, files, events)?;
+        let mut offer = Offer::new(id, files, events)?;
+        offer.from = from;
         {
             let mut offers = self.offers.lock().expect("lock");
             if offers.contains_key(&phone) {
@@ -351,7 +399,8 @@ impl Link {
                 (
                     "POST",
                     "/request" | "/chunk" | "/status" | "/done" | "/cancel" | "/inbox" | "/pull"
-                    | "/offer/accept" | "/offer/decline" | "/offer/done" | "/offer/cancel",
+                    | "/peers" | "/offer/accept" | "/offer/decline" | "/offer/done"
+                    | "/offer/cancel",
                 ) => match self.sealed(&req, *addr.ip()).await {
                     Some((ctr, body)) => (
                         200,
@@ -472,6 +521,7 @@ impl Link {
                 .to_string()
                 .into_bytes(),
             "/status" => status(&s).to_string().into_bytes(),
+            "/peers" => self.peers(phone).to_string().into_bytes(),
             "/done" => self.on_done(&mut s).to_string().into_bytes(),
             "/cancel" => {
                 self.end_upload(&mut s, |saved| RecvOutcome::Cancelled {
@@ -531,7 +581,7 @@ impl Link {
             .collect();
         Some(json!({
             "id": o.id,
-            "from": *self.computer_name.read().expect("lock"),
+            "from": o.from.clone().unwrap_or_else(|| self.computer_name.read().expect("lock").clone()),
             "files": files,
             "total": o.total,
             "chunk": CHUNK,
@@ -645,25 +695,58 @@ impl Link {
         let Ok(body) = serde_json::from_slice::<RequestBody>(plain) else {
             return json!({ "result": "invalid", "reason": "bad request" });
         };
+        let relay_to = match body.to.as_deref() {
+            None => None,
+            Some(handle) => match self.relay_target(s.phone_id, handle) {
+                Some(t) => Some(t),
+                None => return json!({ "result": "unavailable" }),
+            },
+        };
+        if relay_to.is_some()
+            && body.files.iter().map(|f| f.size).sum::<u64>() > outbox::PHONE_MAX_BYTES
+        {
+            return json!({ "result": "too_big" });
+        }
         // The name comes from pairing on this computer, not from the phone.
         let request = TransferRequest {
             name: s.phone_name.clone(),
             os: "web".into(),
             files: body.files,
         };
-        let admission = match self
-            .receiver
-            .admit(&request, s.ip, phone_fingerprint(&s.phone_id))
-        {
-            Ok(a) => a,
-            Err(Refusal::Busy) => return json!({ "result": "busy" }),
-            Err(Refusal::Declined) => return json!({ "result": "declined" }),
-            Err(Refusal::InsufficientSpace) => return json!({ "result": "insufficient_space" }),
-            Err(Refusal::Invalid(reason)) => {
-                return json!({ "result": "invalid", "reason": reason })
-            }
-        };
+        let mut admission =
+            match self
+                .receiver
+                .admit(&request, s.ip, phone_fingerprint(&s.phone_id))
+            {
+                Ok(a) => a,
+                Err(Refusal::Busy) => return json!({ "result": "busy" }),
+                Err(Refusal::Declined) => return json!({ "result": "declined" }),
+                Err(Refusal::InsufficientSpace) => return json!({ "result": "insufficient_space" }),
+                Err(Refusal::Invalid(reason)) => {
+                    return json!({ "result": "invalid", "reason": reason })
+                }
+            };
         let id = admission.incoming.id;
+        if relay_to.is_some() {
+            // WHY: between two phones this computer only carries the files;
+            // the receiving phone accepts (or not) on its own screen.
+            let dir = self.relay_root.read().expect("lock").join(id.to_string());
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                return json!({ "result": "invalid", "reason": format!("relay folder: {e}") });
+            }
+            admission.save_dir = dir;
+            s.upload = Some(Upload {
+                admission,
+                file: 0,
+                next: 0,
+                current: None,
+                saved: Vec::new(),
+                done_bytes: 0,
+                throttle: Throttle::new(),
+                relay_to,
+            });
+            return json!({ "result": "accepted", "chunk": CHUNK });
+        }
         let answer = self.receiver.ui().ask(admission.incoming.clone());
         match timeout(self.receiver.limits().accept, answer).await {
             Ok(Ok(Decision::Accept)) => {
@@ -675,6 +758,7 @@ impl Link {
                     saved: Vec::new(),
                     done_bytes: 0,
                     throttle: Throttle::new(),
+                    relay_to: None,
                 });
                 json!({ "result": "accepted", "chunk": CHUNK })
             }
@@ -775,7 +859,7 @@ impl Link {
         up.next += 1;
         up.done_bytes += data.len() as u64;
         let (id, total) = (up.admission.incoming.id, up.admission.incoming.total);
-        if up.throttle.ready(up.done_bytes == total) {
+        if up.relay_to.is_none() && up.throttle.ready(up.done_bytes == total) {
             self.receiver.ui().progress(id, up.done_bytes, total);
         }
         if w.written == meta.size {
@@ -807,6 +891,9 @@ impl Link {
         if up.file < up.admission.incoming.files.len() {
             return json!({ "result": "resume", "file": up.file, "next": up.next });
         }
+        if let Some(target) = up.relay_to {
+            return self.forward(s, target);
+        }
         self.end_upload(s, |saved| RecvOutcome::Completed { saved });
         json!({ "result": "completed" })
     }
@@ -819,13 +906,77 @@ impl Link {
                 admission,
                 current,
                 saved,
+                relay_to,
                 ..
             } = up;
             drop(current);
-            self.receiver
-                .ui()
-                .finished(admission.incoming.id, outcome(saved));
+            if relay_to.is_some() {
+                // Nothing reached the desktop; just drop the relay folder.
+                let _ = std::fs::remove_dir_all(&admission.save_dir);
+            } else {
+                self.receiver
+                    .ui()
+                    .finished(admission.incoming.id, outcome(saved));
+            }
             drop(admission);
+        }
+    }
+
+    /// Phones this phone can send to: other paired phones with Yon open.
+    fn peers(&self, me: [u8; 16]) -> Value {
+        let online = self.online_phones();
+        let phones = self.phones.read().expect("lock");
+        let list: Vec<Value> = online
+            .iter()
+            .filter(|id| **id != me)
+            .filter_map(|id| phones.get(id))
+            .map(|p| json!({ "id": phone_handle(&p.id), "name": p.name }))
+            .collect();
+        json!({ "computer": *self.computer_name.read().expect("lock"), "phones": list })
+    }
+
+    fn relay_target(&self, me: [u8; 16], handle: &str) -> Option<[u8; 16]> {
+        let online = self.online_phones();
+        let phones = self.phones.read().expect("lock");
+        let target = phones
+            .keys()
+            .find(|id| **id != me && phone_handle(id) == handle)
+            .copied()?;
+        let free = !self.offers.lock().expect("lock").contains_key(&target);
+        (online.contains(&target) && free).then_some(target)
+    }
+
+    /// Upload finished: offer the stored files to the other phone. The relay
+    /// folder goes away when that offer ends, whatever the outcome.
+    fn forward(&self, s: &mut Session, target: [u8; 16]) -> Value {
+        let up = s.upload.take().expect("checked by caller");
+        let dir = up.admission.save_dir.clone();
+        let id = RELAY_ID_BASE + up.admission.incoming.id;
+        let from = s.phone_name.clone();
+        let files: Vec<OutFile> = up
+            .saved
+            .iter()
+            .filter_map(|path| {
+                Some(OutFile {
+                    size: std::fs::metadata(path).ok()?.len(),
+                    name: path.file_name()?.to_string_lossy().into_owned(),
+                    path: path.clone(),
+                })
+            })
+            .collect();
+        drop(up); // frees the one-transfer slot
+        match self.add_offer(
+            id,
+            target,
+            files,
+            Arc::new(RelayCleanup(dir.clone())),
+            Some(from),
+        ) {
+            Ok(()) => json!({ "result": "completed" }),
+            Err(_) => {
+                let _ = std::fs::remove_dir_all(&dir);
+                json!({ "result": "unavailable" })
+            }
         }
     }
 

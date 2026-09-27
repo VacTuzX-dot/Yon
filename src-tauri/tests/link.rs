@@ -471,6 +471,20 @@ async fn serve_page_for_browser() {
         hex(&env.phone.key),
         env.recv_dir.display()
     );
+    // A second phone, to try phone → phone in another tab.
+    let b = Phone {
+        id: [0x44; 16],
+        key: [0x55; 32],
+        name: "Second phone".into(),
+    };
+    env.link.set_phones(vec![env.phone.clone(), b.clone()]);
+    env.link.set_relay_dir(env.root.join("relay"));
+    println!(
+        "second phone: http://{}/#{}.{}",
+        env.addr,
+        hex(&b.id),
+        hex(&b.key)
+    );
     // Computer → phone: keep offering two files; each outcome is printed.
     let big: Vec<u8> = (0..(CHUNK * 2 + 4321)).map(|i| (i % 251) as u8).collect();
     let src = env.root.join("send");
@@ -745,4 +759,132 @@ async fn unanswered_offers_time_out_and_removed_phones_end_theirs() {
         .unwrap();
     env.link.set_phones(vec![]);
     assert!(matches!(finished(done).await, SendOutcome::Failed { .. }));
+}
+
+// ---------- phone → phone through the computer ----------
+
+#[tokio::test]
+async fn phones_send_to_each_other_through_the_computer() {
+    let limits = LinkLimits {
+        inbox_wait: Duration::from_millis(200),
+        ..LinkLimits::default()
+    };
+    let mut env = setup_with("relay", Mode::Accept, limits).await;
+    let relay = env.root.join("relay");
+    env.link.set_relay_dir(relay.clone());
+    let b = Phone {
+        id: [0x44; 16],
+        key: [0x55; 32],
+        name: "Ploy's Pixel".into(),
+    };
+    env.link.set_phones(vec![env.phone.clone(), b.clone()]);
+
+    let mut pa = FakePhone::hello(env.addr, &env.phone).await;
+    let mut pb = FakePhone::hello(env.addr, &b).await;
+
+    // B hasn't opened its page yet: not a peer, can't be sent to.
+    assert_eq!(pa.call("POST", "/peers", b"").await.1["phones"], json!([]));
+    assert!(pb.call("POST", "/inbox", b"").await.1["offer"].is_null());
+    let peers = pa.call("POST", "/peers", b"").await.1;
+    assert_eq!(peers["computer"], "Test Mac");
+    assert_eq!(peers["phones"][0]["name"], "Ploy's Pixel");
+    let handle = peers["phones"][0]["id"].as_str().unwrap().to_string();
+    assert_ne!(
+        handle,
+        hex(&b.id),
+        "the pairing id is never shown to other phones"
+    );
+    assert_eq!(
+        pb.call("POST", "/peers", b"").await.1["phones"][0]["name"],
+        "Leo's iPhone"
+    );
+
+    let data: Vec<u8> = (0..(CHUNK + 10)).map(|i| (i % 199) as u8).collect();
+    let req = json!({ "files": [{ "name": "clip.mov", "size": data.len() }], "to": handle });
+    let r = pa
+        .call("POST", "/request", req.to_string().as_bytes())
+        .await
+        .1;
+    assert_eq!(r["result"], "accepted", "{r}");
+    pa.send_file(0, &data).await;
+    assert_eq!(pa.call("POST", "/done", b"").await.1["result"], "completed");
+    assert_eq!(
+        env.ui.asked.load(Ordering::SeqCst),
+        0,
+        "the computer doesn't ask"
+    );
+    assert!(
+        listing(&env.recv_dir).is_empty(),
+        "nothing in the desktop's folder"
+    );
+
+    let offer = pb.call("POST", "/inbox", b"").await.1["offer"].clone();
+    assert_eq!(offer["from"], "Leo's iPhone");
+    let o = offer["id"].as_u64().unwrap();
+    assert!(o < (1 << 53), "fits a JS number");
+    pb.call("POST", &format!("/offer/accept?o={o}"), b"").await;
+    pb.ctr += 2;
+    let (c0, c1) = tokio::join!(pb.pull(o, 0, 0, pb.ctr - 1), pb.pull(o, 0, 1, pb.ctr));
+    assert_eq!([c0.unwrap(), c1.unwrap()].concat(), data);
+    assert_eq!(
+        pb.call("POST", &format!("/offer/done?o={o}"), b"").await.1["result"],
+        "completed"
+    );
+    assert!(
+        listing(&relay).is_empty(),
+        "relay folder removed: {:?}",
+        listing(&relay)
+    );
+    assert!(env.outcomes.try_recv().is_err(), "desktop UI saw nothing");
+
+    // Unknown handle, and a phone that's too big to take.
+    let bad = json!({ "files": [{ "name": "a", "size": 1 }], "to": "00" });
+    assert_eq!(
+        pa.call("POST", "/request", bad.to_string().as_bytes())
+            .await
+            .1["result"],
+        "unavailable"
+    );
+    let huge = json!({ "files": [{ "name": "a", "size": 2_000_000_000u64 }], "to": handle });
+    assert_eq!(
+        pa.call("POST", "/request", huge.to_string().as_bytes())
+            .await
+            .1["result"],
+        "too_big"
+    );
+}
+
+#[tokio::test]
+async fn cancelled_relay_upload_leaves_nothing_behind() {
+    let limits = LinkLimits {
+        inbox_wait: Duration::from_millis(200),
+        ..LinkLimits::default()
+    };
+    let env = setup_with("relay-cancel", Mode::Accept, limits).await;
+    let relay = env.root.join("relay");
+    env.link.set_relay_dir(relay.clone());
+    let b = Phone {
+        id: [0x44; 16],
+        key: [0x55; 32],
+        name: "B".into(),
+    };
+    env.link.set_phones(vec![env.phone.clone(), b.clone()]);
+    let mut pa = FakePhone::hello(env.addr, &env.phone).await;
+    let mut pb = FakePhone::hello(env.addr, &b).await;
+    pb.call("POST", "/inbox", b"").await;
+    let handle = pa.call("POST", "/peers", b"").await.1["phones"][0]["id"].clone();
+    let req = json!({ "files": [{ "name": "x.bin", "size": CHUNK * 2 }], "to": handle });
+    assert_eq!(
+        pa.call("POST", "/request", req.to_string().as_bytes())
+            .await
+            .1["result"],
+        "accepted"
+    );
+    pa.call("POST", "/chunk?f=0&i=0", &vec![7; CHUNK]).await;
+    assert_eq!(
+        pa.call("POST", "/cancel", b"").await.1["result"],
+        "cancelled"
+    );
+    assert!(listing(&relay).is_empty(), "{:?}", listing(&relay));
+    assert!(pb.call("POST", "/inbox", b"").await.1["offer"].is_null());
 }

@@ -27,6 +27,8 @@ pub trait OfferEvents: Send + Sync {
 
 pub(super) struct Offer {
     pub id: u64,
+    /// Shown as the sender; `None` = this computer.
+    pub from: Option<String>,
     pub files: Vec<OutFile>,
     pub total: u64,
     pub accepted: bool,
@@ -50,6 +52,7 @@ impl Offer {
         let now = Instant::now();
         Ok(Self {
             id,
+            from: None,
             files,
             total,
             accepted: false,
