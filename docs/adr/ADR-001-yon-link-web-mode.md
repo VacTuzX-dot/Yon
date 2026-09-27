@@ -26,6 +26,21 @@ per-session key derived from the pairing key, not from TLS.
 
 Version 1 is phone → computer only.
 
+**Amendment (2026-09-27, v2):** the maintainer wants Yon to be the only app on
+every device (ADR-002, LocalSend, deferred), so Yon Link now goes both ways:
+
+- **Computer → phone.** The desktop offers files to a paired phone; the page,
+  while open, long-polls `/inbox`, shows the offer, and pulls sealed 1 MiB
+  chunks (three in parallel) into a Blob per chunk. A spike on an iPhone showed
+  decryption in Safari is fast (~120–200 MB/s) and that 1000 MiB works only
+  with a Blob per chunk (one big Blob made iOS close the page), so offers are
+  capped at 1000 MiB. Parallel requests need a sliding replay window (64)
+  instead of strictly increasing counters.
+- **Phone ↔ phone, relayed by the computer.** A phone can send to another
+  paired phone whose page is open. The computer stores the upload in a relay
+  folder (same admission checks, no desktop dialog) and offers it to the other
+  phone, which accepts or declines; the folder is deleted when that ends.
+
 ## Consequences
 
 ### Positive
@@ -42,7 +57,10 @@ Version 1 is phone → computer only.
   Passive sniffing is covered. The UI says so, and phones can be removed.
 - The page must stay open while sending (iOS suspends hidden pages); uploads
   resume but don't continue in the background. No "Share → Yon" from phone apps.
-- Computer → phone is deferred: it needs in-browser decryption into memory.
+- Computer → phone keeps the whole file in the phone's memory (as Blobs) until
+  it is saved, so offers are capped at 1000 MiB. From the Home Screen icon,
+  each file is saved by hand (Share → Save); Safari saves to Downloads.
+- Phone ↔ phone needs the computer running with Yon, and both pages open.
 - A fixed port (53421) so saved icons keep working; if it's taken, Link is
   unavailable until it's free.
 

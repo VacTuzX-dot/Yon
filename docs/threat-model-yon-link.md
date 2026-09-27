@@ -1,6 +1,7 @@
-## Threat Model: Yon Link (phone → computer over a paired web page)
+## Threat Model: Yon Link (paired web page for phones)
 
-See ADR-001 for why this exists. Scope: v1, upload from phone to computer.
+See ADR-001 for why this exists. Scope: v2 — phone → computer, computer →
+phone, and phone ↔ phone relayed by the computer.
 
 ### 1. Assets
 
@@ -8,6 +9,9 @@ See ADR-001 for why this exists. Scope: v1, upload from phone to computer.
 - Confidentiality of file contents while on the Wi-Fi
 - Per-phone pairing keys (in the phone's saved URL and in the desktop settings file)
 - The desktop user's attention (Accept dialogs)
+- Files the desktop user offers to a phone (must reach only that phone)
+- Relayed files while they sit on the computer
+- The phone's memory while receiving
 
 ### 2. Trust Boundaries
 
@@ -27,9 +31,9 @@ See ADR-001 for why this exists. Scope: v1, upload from phone to computer.
 
 ### 4. Attack Surface
 
-- TCP port 53421 on all IPv4 interfaces (private source addresses only), open only while a phone is paired or the pairing sheet is shown
+- TCP port 53421 on all IPv4 interfaces (private source addresses only), open only while at least one phone is paired
 - `GET /` and static assets (no secrets; K is never sent to the server)
-- `GET /hello?p=<pair_id>`, `POST /request`, `POST /chunk`, `POST /status`, `POST /done`, `POST /cancel` — all but `/` and `/hello` require a valid AEAD session
+- `GET /hello?p=<pair_id>`, `POST /request`, `POST /chunk`, `POST /status`, `POST /done`, `POST /cancel`, `POST /inbox`, `POST /pull`, `POST /offer/{accept,decline,done,cancel}`, `POST /peers` — all but `/` and `/hello` require a valid AEAD session
 - QR code and saved Home Screen URL (contain K in the fragment)
 
 ### 5. Threats (STRIDE)
@@ -48,11 +52,20 @@ See ADR-001 for why this exists. Scope: v1, upload from phone to computer.
 | Cross-site request from another page on the phone | S | Low | Low | Requests need K-derived AEAD; strict CSP, no CORS headers |
 | K stolen from the desktop settings file | I | Low | Med | Same exposure as the identity key file (user-level); TECH DEBT: OS keychain |
 | Disk fill via many accepted transfers | D | Low | Med | Free-space check per request; user must accept each untrusted request |
+| Out-of-order parallel requests abused for replay | T | Low | Med | 64-counter sliding window per direction: each counter once; window moves only after a message opens |
+| A phone reads files offered to another phone, or desktop files not offered | I | Low | High | Offers are keyed by the phone id of the authenticated session; `/pull` only takes indexes into that offer (range-checked, `checked_mul`); paths never come from the phone |
+| Paired phone A pushes unwanted files to phone B | S/D | Med | Low | B sees who sends and must accept; only paired phones with the page open; one offer per phone; ≤ 1000 MiB |
+| Relayed files left on the computer | I/D | Low | Med | Stored under the app data folder (not Downloads, never opened), same free-space check and one-transfer-at-a-time slot; deleted when the offer completes, is declined, cancelled or expires, when the upload is cancelled, and at startup |
+| Listing other phones | I | Low | Low | `/peers` only for authenticated sessions; returns names and a fingerprint-derived handle, never pairing ids or keys |
+| Phone memory exhaustion while receiving | D | Med | Low | Offers capped at 1000 MiB (tested on iPhone); a Blob per chunk; chunk length checked |
+| Unanswered or stalled offers pile up | D | Low | Low | One offer per phone; unaccepted offers expire after 10 min, stalled ones after the session idle time |
 
 ### 6. Residual Risks
 
 - Active MITM on the LAN can capture K by injecting JavaScript — accepted for v1: plain http can't prevent it; stated in UI and README; revocation available. The desktop ↔ desktop protocol (mutual TLS) is unaffected.
 - A trusted ("always accept") phone whose K leaks can write files without prompting until removed — same as a trusted desktop device; users choose trust per phone.
+- Phone ↔ phone relays don't ask the desktop user; any paired phone can offer files to any other paired phone that has Yon open. Accepted: the owner paired both phones, and the receiving phone decides.
+- A leaked K also lets its holder receive files the desktop user offers to that phone. Offers are started by the desktop user for a named phone; "Remove phone" revokes K.
 
 ### 7. Controls Required (before shipping)
 
@@ -64,3 +77,6 @@ See ADR-001 for why this exists. Scope: v1, upload from phone to computer.
 - [ ] "Remove phone" deletes K and closes its sessions
 - [ ] UI label and README note about the weaker protection
 - [ ] Strict security headers on every response (CSP `default-src 'self'`, no inline script, `no-store`, `no-referrer`, `nosniff`)
+- [x] v2: sliding replay window with tests on both sides (mutation-checked)
+- [x] v2: offers bound to the authenticated phone; range-checked pulls; tests for decline, cancel both sides, expiry, removed phone
+- [x] v2: relay folder lifecycle tests (completed, cancelled upload); desktop UI not involved

@@ -18,7 +18,7 @@ Yon is a small, open-source desktop app for sending files between computers on t
 - Large files are streamed, so a 1 GB file uses a few MB of memory, and every file is checked with SHA-256 when it arrives.
 - Received files go to `Downloads/Yon` (you can change this). Existing files are never overwritten: you get `photo (1).jpg` instead.
 - Send from your file manager: on Windows, right-click → **Send to → Yon**; on macOS, use **Share → Yon** (from Finder or any app), **Open With → Yon**, or drop files on Yon's Dock icon. Yon asks which device to send to.
-- Send from your phone with **Yon Link**, no app to install (see below).
+- Send files between your phones and computers with **Yon Link**, no app to install on the phone (see below).
 - Stays ready in the background: on macOS, closing the window (⌘W) keeps Yon in the menu bar; on Windows, closing sends it to the tray (turn this off in Settings). On macOS you can also hide the Dock icon in Settings to keep Yon in the menu bar only. Quit from the menu bar / tray icon, or ⌘Q on macOS.
 
 ## Install
@@ -40,7 +40,7 @@ The builds are not code-signed yet, so your OS will warn you the first time.
 
 Yon checks GitHub Releases for a new version shortly after it starts and every few hours. When one is out, a bar at the bottom of the window says so: click **Update** and Yon downloads it, installs it over the old version and reopens. Files left behind by earlier updates are cleaned up on the next start. You can turn automatic checks off, or check by hand, in **Settings → Updates**.
 
-### Send from your phone (Yon Link)
+### Phones (Yon Link)
 
 iPhone and Android phones send photos and files to your computer through a small web page that Yon serves on your Wi-Fi. There's nothing to install from an app store.
 
@@ -48,11 +48,15 @@ iPhone and Android phones send photos and files to your computer through a small
 2. On the phone: open the Camera, scan the code, and tap the link. The phone must be on the same Wi-Fi.
 3. Tap Share → **Add to Home Screen** (Android: menu ⋮ → Add to Home screen).
 
-From then on, tap the Yon icon on your phone, choose photos or files, and accept on the computer. You only scan once. If the link doesn't open (some Android phones can't use `.local` names), tap "Link doesn't open?" under the QR code for a code that uses the computer's IP address instead.
+From then on, tap the Yon icon on your phone:
 
-Keep the phone's screen on while a big file is sending. If the phone locks, the upload continues from where it stopped when you come back, as long as it's within about 5 minutes.
+- **Phone → computer:** choose photos or files, then accept on the computer.
+- **Computer → phone:** your paired phones show up next to other computers in Yon. Pick one, choose files, and tap Receive on the phone (its Yon page has to be open, or opened within 10 minutes). In Safari the files go to Files → Downloads; from the Home Screen icon, tap Save on each file, then Share → Save to Files (or Save Image/Video for photos and videos). Up to 1 GB at a time.
+- **Phone → phone:** when another paired phone has its Yon page open, it appears under "Send to". The computer passes the files along (Yon must be running there) and the other phone taps Receive.
 
-For now, phones can send to the computer but not receive.
+You only scan once. If the link doesn't open (some Android phones can't use `.local` names), tap "Link doesn't open?" under the QR code for a code that uses the computer's IP address instead.
+
+Keep the phone's screen on while a big file is sending or arriving. If the phone locks, the transfer continues from where it stopped when you come back, as long as it's within about 5 minutes.
 
 ### Verify the download
 
@@ -177,7 +181,7 @@ src-tauri/tests/     end-to-end tests: transfers over TLS, a fake phone over Yon
 
 ## Roadmap
 
-- **Next:** drag and drop, send folders, send text / clipboard, transfer history, computer → phone over Yon Link.
+- **Next:** drag and drop, send folders, send text / clipboard, transfer history.
 - **Later:** transfers across networks (via [iroh](https://iroh.computer)), optional LocalSend compatibility, native mobile apps.
 
 ## License
