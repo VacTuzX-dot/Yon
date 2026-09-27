@@ -134,17 +134,17 @@ export function sendOutcomeText(r: SendOutcome): string {
     case "declined":
       return "Declined";
     case "busy":
-      return "Device is busy with another transfer";
+      return "Busy with another transfer";
     case "timed_out":
-      return "No answer from the device";
+      return "No answer";
     case "incompatible":
-      return "Incompatible Yon version — update both devices";
+      return "Update Yon on both devices";
     case "insufficient_space":
-      return "Not enough free space on the receiving device";
+      return "Not enough space on their device";
     case "cancelled":
-      return r.by_receiver ? "Cancelled by receiver" : "Cancelled";
+      return r.by_receiver ? "They cancelled" : "Cancelled";
     case "failed":
-      return `Failed: ${r.reason}`;
+      return `Couldn't send: ${r.reason}`;
   }
 }
 
@@ -161,7 +161,7 @@ export function recvOutcomeText(r: RecvFinished): string {
     case "cancelled":
       return "Cancelled";
     case "failed":
-      return `Failed: ${r.reason ?? "unknown error"}`;
+      return `Couldn't receive: ${r.reason ?? "unknown error"}`;
   }
 }
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   errorText,
@@ -8,20 +8,21 @@ import {
   recvOutcomeText,
   sendOutcomeText,
   type AppState,
+  type Device,
   type Incoming,
   type RecvFinished,
   type Selection,
   type SendOutcome,
   type SendStatus,
 } from "./api";
-import DeviceList from "./components/DeviceList";
+import ConfirmSheet from "./components/ConfirmSheet";
+import DeviceOrbit, { initials, type DeviceActivity } from "./components/DeviceOrbit";
 import IncomingDialog from "./components/IncomingDialog";
-import SendPanel from "./components/SendPanel";
-import Settings from "./components/Settings";
+import Ring from "./components/Ring";
+import SettingsSheet from "./components/SettingsSheet";
 
 interface Outgoing {
-  id: number;
-  to: string;
+  deviceId: string;
   status: SendStatus;
   result?: SendOutcome;
 }
@@ -34,16 +35,19 @@ interface Receiving {
   finished?: RecvFinished;
 }
 
+/** How long a "Sent" / "Declined" note stays under a device. */
+const NOTE_MS = 5000;
+
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
-  const [tab, setTab] = useState<"send" | "settings">("send");
-  const [selection, setSelection] = useState<Selection | null>(null);
-  const [device, setDevice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ device: Device; selection: Selection } | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [incoming, setIncoming] = useState<Incoming | null>(null);
-  const [outgoing, setOutgoing] = useState<Outgoing[]>([]);
+  const [outgoing, setOutgoing] = useState<Record<number, Outgoing>>({});
   const [receiving, setReceiving] = useState<Receiving[]>([]);
+  const timers = useRef<number[]>([]);
 
   useEffect(() => {
     api.getState().then(setState, (e) => setFatal(errorText(e)));
@@ -57,53 +61,66 @@ export default function App() {
       ),
       on("recv-finished", (f) => {
         setIncoming((cur) => (cur?.id === f.id ? null : cur));
-        setReceiving((list) =>
-          list.some((r) => r.id === f.id)
-            ? list.map((r) => (r.id === f.id ? { ...r, finished: f } : r))
-            : list,
-        );
+        setReceiving((list) => list.map((r) => (r.id === f.id ? { ...r, finished: f } : r)));
       }),
       on("send-status", ({ id, status }) =>
-        setOutgoing((list) => list.map((o) => (o.id === id ? { ...o, status } : o))),
+        setOutgoing((m) => (m[id] ? { ...m, [id]: { ...m[id], status } } : m)),
       ),
-      on("send-finished", ({ id, result }) =>
-        setOutgoing((list) => list.map((o) => (o.id === id ? { ...o, result } : o))),
-      ),
+      on("send-finished", ({ id, result }) => {
+        setOutgoing((m) => (m[id] ? { ...m, [id]: { ...m[id], result } } : m));
+        // Good news fades; problems stay until the next try.
+        if (["completed", "declined", "cancelled"].includes(result.outcome)) {
+          timers.current.push(
+            window.setTimeout(
+              () =>
+                setOutgoing((m) => {
+                  const { [id]: _, ...rest } = m;
+                  return rest;
+                }),
+              NOTE_MS,
+            ),
+          );
+        }
+      }),
     ];
     return () => {
       subs.forEach((p) => p.then((unlisten) => unlisten()));
+      timers.current.forEach(clearTimeout);
     };
   }, []);
 
-  const pick = useCallback(async () => {
+  const pickFor = useCallback(async (device: Device) => {
     setError(null);
     try {
-      const sel = await api.pickFiles();
-      if (sel) {
-        if (selection) api.clearSelection(selection.id);
-        setSelection(sel);
-      }
+      const selection = await api.pickFiles();
+      if (selection) setConfirm({ device, selection });
     } catch (e) {
       setError(errorText(e));
     }
-  }, [selection]);
+  }, []);
 
-  const clear = useCallback(() => {
-    if (selection) api.clearSelection(selection.id);
-    setSelection(null);
-  }, [selection]);
+  const closeConfirm = useCallback(() => {
+    if (confirm) api.clearSelection(confirm.selection.id);
+    setConfirm(null);
+  }, [confirm]);
 
   const send = useCallback(async () => {
-    if (!selection || !device || !state) return;
-    setError(null);
-    const to = state.devices.find((d) => d.id === device)?.name ?? "device";
+    if (!confirm) return;
+    const { device, selection } = confirm;
+    setConfirm(null);
     try {
-      const id = await api.send(selection.id, device);
-      setOutgoing((list) => [{ id, to, status: { state: "connecting" } }, ...list]);
+      const id = await api.send(selection.id, device.id);
+      setOutgoing((m) => {
+        // One note per device: drop the previous one for this device.
+        const rest = Object.fromEntries(
+          Object.entries(m).filter(([, o]) => o.deviceId !== device.id),
+        );
+        return { ...rest, [id]: { deviceId: device.id, status: { state: "connecting" } } };
+      });
     } catch (e) {
       setError(errorText(e));
     }
-  }, [selection, device, state]);
+  }, [confirm]);
 
   const answer = useCallback(
     (accept: boolean) => {
@@ -111,8 +128,8 @@ export default function App() {
       api.respond(incoming.id, accept);
       if (accept) {
         setReceiving((list) => [
-          { id: incoming.id, from: incoming.sender_name, done: 0, total: incoming.total },
           ...list,
+          { id: incoming.id, from: incoming.sender_name, done: 0, total: incoming.total },
         ]);
       }
       setIncoming(null);
@@ -120,154 +137,130 @@ export default function App() {
     [incoming],
   );
 
-  if (fatal) return <main className="app"><p className="notice error">{fatal}</p></main>;
-  if (!state) return <main className="app"><p className="muted">Starting…</p></main>;
+  if (fatal) return <main className="app"><p className="hint bad">{fatal}</p></main>;
+  if (!state) return <main className="app" />;
 
-  const selectedOk = state.devices.some((d) => d.id === device && d.compatible);
+  const activity: Record<string, DeviceActivity> = {};
+  for (const o of Object.values(outgoing)) {
+    activity[o.deviceId] = toActivity(o);
+  }
+  const cancelFor = (d: Device) => {
+    const entry = Object.entries(outgoing).find(([, o]) => o.deviceId === d.id && !o.result);
+    if (entry) api.cancelSend(Number(entry[0]));
+  };
 
   return (
     <main className="app">
       <header>
-        <h1>Yon</h1>
-        <span className="muted">
-          {state.me.name} · <code className="fp">{state.me.short_fingerprint}</code>
-        </span>
-        <nav>
-          <button
-            type="button"
-            className={tab === "send" ? "tab active" : "tab"}
-            onClick={() => setTab("send")}
-          >
-            Send
-          </button>
-          <button
-            type="button"
-            className={tab === "settings" ? "tab active" : "tab"}
-            onClick={() => setTab("settings")}
-          >
-            Settings
-          </button>
-        </nav>
+        <span className="wordmark">Yon</span>
+        <button
+          type="button"
+          className="icon"
+          aria-label="Settings"
+          onClick={() => setSettingsOpen(true)}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden>
+            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+            <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z" />
+          </svg>
+        </button>
       </header>
 
-      {state.me.port_fallback && (
-        <p className="notice">
-          Port {state.settings.port} is busy — using port {state.me.port} instead.
-        </p>
-      )}
-      {error && <p className="notice error">{error}</p>}
+      <section className="stage">
+        <h1>{state.devices.length ? "Choose a device to send to" : "Looking for devices nearby"}</h1>
+        <DeviceOrbit
+          devices={state.devices}
+          activity={activity}
+          onPick={pickFor}
+          onCancel={cancelFor}
+          error={state.discovery_error}
+        />
+        {error && <p className="hint bad">{error}</p>}
+      </section>
 
-      {tab === "send" ? (
-        <div className="grid">
-          <section>
-            <h2>Nearby devices</h2>
-            <DeviceList
-              devices={state.devices}
-              selected={device}
-              onSelect={setDevice}
-              error={state.discovery_error}
-            />
-          </section>
-          <section>
-            <h2>Files</h2>
-            <SendPanel
-              selection={selection}
-              canSend={!!selection && selectedOk}
-              onPick={pick}
-              onClear={clear}
-              onSend={send}
-            />
-          </section>
-        </div>
-      ) : (
-        <Settings key={state.settings.port} state={state} onChange={setState} />
-      )}
-
-      {(outgoing.length > 0 || receiving.length > 0) && (
-        <section>
-          <h2>Transfers</h2>
-          <ul className="transfers">
-            {receiving.map((r) => (
-              <li key={`r${r.id}`}>
-                <div className="row">
-                  <span>From {r.from}</span>
-                  <span className="muted">
-                    {r.finished
-                      ? recvOutcomeText(r.finished)
-                      : `${formatBytes(r.done)} / ${formatBytes(r.total)}`}
-                  </span>
-                </div>
-                {!r.finished && <progress max={r.total || 1} value={r.done} />}
-                <div className="row end">
-                  {!r.finished && (
-                    <button type="button" onClick={() => api.cancelReceive(r.id)}>
-                      Cancel
-                    </button>
-                  )}
-                  {r.finished && r.finished.saved.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => api.reveal(r.id).catch((e) => setError(errorText(e)))}
-                    >
-                      Show in {fileManagerName}
-                    </button>
-                  )}
-                  {r.finished && (
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => setReceiving((l) => l.filter((x) => x.id !== r.id))}
-                    >
-                      Dismiss
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-            {outgoing.map((o) => (
-              <li key={`s${o.id}`}>
-                <div className="row">
-                  <span>To {o.to}</span>
-                  <span className="muted">
-                    {o.result ? sendOutcomeText(o.result) : statusText(o.status)}
-                  </span>
-                </div>
-                {!o.result && o.status.state === "transferring" && (
-                  <progress max={o.status.total || 1} value={o.status.done} />
-                )}
-                <div className="row end">
-                  {o.result ? (
-                    <button
-                      type="button"
-                      className="ghost"
-                      onClick={() => setOutgoing((l) => l.filter((x) => x.id !== o.id))}
-                    >
-                      Dismiss
-                    </button>
-                  ) : (
-                    <button type="button" onClick={() => api.cancelSend(o.id)}>
-                      Cancel
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
+      {receiving.length > 0 && (
+        <ul className="tray" aria-label="Incoming files">
+          {receiving.map((r) => (
+            <li key={r.id}>
+              <span className="avatar small" aria-hidden>
+                {!r.finished && <Ring progress={r.total ? r.done / r.total : null} />}
+                <span className="initials">{initials(r.from)}</span>
+              </span>
+              <span className="tray-text">
+                {r.finished
+                  ? `${recvOutcomeText(r.finished)} from ${r.from}`
+                  : `Receiving from ${r.from}, ${formatBytes(r.done)} of ${formatBytes(r.total)}`}
+              </span>
+              {!r.finished && (
+                <button type="button" className="quiet" onClick={() => api.cancelReceive(r.id)}>
+                  Cancel
+                </button>
+              )}
+              {r.finished && r.finished.saved.length > 0 && (
+                <button
+                  type="button"
+                  className="quiet"
+                  onClick={() => api.reveal(r.id).catch((e) => setError(errorText(e)))}
+                >
+                  Show in {fileManagerName}
+                </button>
+              )}
+              {r.finished && (
+                <button
+                  type="button"
+                  className="icon small"
+                  aria-label="Dismiss"
+                  onClick={() => setReceiving((l) => l.filter((x) => x.id !== r.id))}
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden>
+                    <path d="M6 6l12 12M18 6 6 18" />
+                  </svg>
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
+      <footer>
+        You appear as <strong>{state.me.name}</strong>
+      </footer>
+
+      {confirm && (
+        <ConfirmSheet
+          device={confirm.device}
+          selection={confirm.selection}
+          onSend={send}
+          onClose={closeConfirm}
+        />
+      )}
+      {settingsOpen && (
+        <SettingsSheet state={state} onChange={setState} onClose={() => setSettingsOpen(false)} />
+      )}
       {incoming && <IncomingDialog key={incoming.id} request={incoming} onAnswer={answer} />}
     </main>
   );
 }
 
-function statusText(s: SendStatus): string {
-  switch (s.state) {
+function toActivity(o: Outgoing): DeviceActivity {
+  if (o.result) {
+    const ok = o.result.outcome === "completed";
+    const neutral = o.result.outcome === "declined" || o.result.outcome === "cancelled";
+    return {
+      progress: null,
+      busy: false,
+      label: sendOutcomeText(o.result),
+      tone: ok ? "ok" : neutral ? undefined : "bad",
+    };
+  }
+  switch (o.status.state) {
     case "connecting":
-      return "Connecting…";
+      return { progress: null, busy: true, label: "Connecting…" };
     case "waiting":
-      return "Waiting for the other device to accept…";
-    case "transferring":
-      return `${formatBytes(s.done)} / ${formatBytes(s.total)}`;
+      return { progress: null, busy: true, label: "Waiting for them to accept…" };
+    case "transferring": {
+      const p = o.status.total ? o.status.done / o.status.total : 0;
+      return { progress: p, busy: true, label: `${Math.floor(p * 100)}%` };
+    }
   }
 }

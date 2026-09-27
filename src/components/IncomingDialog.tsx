@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { formatBytes, type Incoming } from "../api";
+import { initials } from "./DeviceOrbit";
 
 interface Props {
   request: Incoming;
@@ -8,15 +9,13 @@ interface Props {
 
 export default function IncomingDialog({ request, onAnswer }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
-
-  useEffect(() => {
-    ref.current?.showModal();
-  }, []);
+  useEffect(() => ref.current?.showModal(), []);
+  const n = request.files.length;
 
   return (
     <dialog
       ref={ref}
-      className="incoming"
+      className="sheet incoming"
       aria-labelledby="incoming-title"
       // Esc = decline, never a silent accept.
       onCancel={(e) => {
@@ -24,33 +23,36 @@ export default function IncomingDialog({ request, onAnswer }: Props) {
         onAnswer(false);
       }}
     >
-      <h2 id="incoming-title">
-        {request.sender_name} wants to send you {request.files.length} file
-        {request.files.length === 1 ? "" : "s"}
-      </h2>
-      <p className="fp-line">
-        Device fingerprint <code className="fp big">{request.short_fingerprint}</code>
-      </p>
-      <p className="muted small">
-        Names can be faked. If you're unsure, check this fingerprint in Yon on the sender's
-        device.
-      </p>
+      <div className="sender">
+        <span className="avatar small" aria-hidden>
+          <span className="initials">{initials(request.sender_name)}</span>
+        </span>
+        <div>
+          <h2 id="incoming-title">{request.sender_name}</h2>
+          <p className="hint">
+            wants to send you {n} {n === 1 ? "file" : "files"}, {formatBytes(request.total)}
+          </p>
+        </div>
+      </div>
       <ul className="files">
         {request.files.map((f, i) => (
           <li key={i}>
             <span className="file-name">{f.name}</span>
             {f.renamed && (
-              <span className="badge" title="The name was changed to be safe on this device">
+              <span className="tag" title="Renamed so it's safe to save on this device">
                 renamed
               </span>
             )}
-            <span className="muted">{formatBytes(f.size)}</span>
+            <span className="size">{formatBytes(f.size)}</span>
           </li>
         ))}
       </ul>
-      <p>Total {formatBytes(request.total)}</p>
-      <div className="row end">
-        <button type="button" onClick={() => onAnswer(false)}>
+      <p className="hint">
+        Device code <span className="code">{request.short_fingerprint}</span>. Not sure it's
+        them? Ask them to open Settings in Yon and compare.
+      </p>
+      <div className="actions">
+        <button type="button" className="quiet" onClick={() => onAnswer(false)}>
           Decline
         </button>
         <button type="button" className="primary" onClick={() => onAnswer(true)}>
