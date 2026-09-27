@@ -10,6 +10,8 @@ export interface Device {
   app: string;
   compatible: boolean;
   short_fingerprint: string;
+  /** Phones only: its Yon page is open right now. */
+  online?: boolean;
 }
 
 export interface Settings {
@@ -54,6 +56,7 @@ export interface AppState {
   settings: Settings;
   devices: Device[];
   discovery_error: string | null;
+  online_phones: string[];
 }
 
 export interface FileInfo {
@@ -140,6 +143,7 @@ export const api = {
 
 export interface Events {
   devices: Device[];
+  "phones-online": string[];
   incoming: Incoming;
   shared: null;
   "recv-started": { id: number; sender_name: string; total: number };
@@ -156,6 +160,20 @@ export function on<K extends keyof Events>(
   handler: (payload: Events[K]) => void,
 ): Promise<UnlistenFn> {
   return listen<Events[K]>(event, (e) => handler(e.payload));
+}
+
+/** Computers found nearby plus paired phones (sent to over Yon Link). */
+export function allDevices(state: AppState): Device[] {
+  const phones: Device[] = state.settings.phones.map((p) => ({
+    id: `phone:${p.id}`,
+    name: p.name,
+    os: "phone",
+    app: "",
+    compatible: true,
+    short_fingerprint: "",
+    online: state.online_phones.includes(p.id),
+  }));
+  return [...state.devices, ...phones];
 }
 
 export function errorText(e: unknown): string {

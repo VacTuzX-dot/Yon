@@ -7,6 +7,7 @@
 use crate::client::{self, OutFile, SendOutcome, SendStatus, Target};
 use crate::discovery::{Device, Discovery};
 use crate::identity::{short_fingerprint, Identity};
+use crate::link::outbox::OfferEvents;
 use crate::link::{self, Link, LinkLimits, Phone, LINK_PORT};
 use crate::protocol::{hex, unhex};
 use crate::server::{self, Decision, IncomingRequest, Limits, Receiver, ReceiverUi, RecvOutcome};
@@ -63,6 +64,8 @@ pub struct StateDto {
     settings: SettingsDto,
     devices: Vec<Device>,
     discovery_error: Option<String>,
+    /// Paired phones whose Yon page is open right now (ids, hex).
+    online_phones: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -374,6 +377,12 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
     let port = state.settings.lock().expect("lock").port;
     tauri::async_runtime::block_on(state.switch_listener(port))?;
     tauri::async_runtime::block_on(state.sync_link());
+    let presence_app = app.clone();
+    state.link.set_presence_listener(Arc::new(move || {
+        if let Some(s) = presence_app.try_state::<AppState>() {
+            let _ = presence_app.emit("phones-online", s.online_phones());
+        }
+    }));
     state.advertise()?;
     Ok(state)
 }
@@ -442,6 +451,10 @@ impl AppState {
             }
         };
         *self.link_error.lock().expect("lock") = error;
+    }
+
+    fn online_phones(&self) -> Vec<String> {
+        self.link.online_phones().iter().map(|p| hex(p)).collect()
     }
 
     /// The `.local` name mDNS announces for this computer (see discovery).
@@ -559,6 +572,7 @@ pub fn get_state(state: State<'_, AppState>) -> StateDto {
         settings: state.settings_dto(),
         devices: state.devices.lock().expect("lock").clone(),
         discovery_error: state.discovery_error.clone(),
+        online_phones: state.online_phones(),
     }
 }
 
@@ -593,6 +607,9 @@ pub fn send(
     selection_id: u64,
     device_id: String,
 ) -> Result<u64, String> {
+    if let Some(phone) = device_id.strip_prefix("phone:") {
+        return send_to_phone(app, &state, selection_id, phone);
+    }
     let device = state
         .devices
         .lock()
@@ -648,8 +665,64 @@ pub fn send(
     Ok(id)
 }
 
+/// Computer → phone over Yon Link: the phone's page picks the offer up.
+fn send_to_phone(
+    app: AppHandle,
+    state: &AppState,
+    selection_id: u64,
+    phone: &str,
+) -> Result<u64, String> {
+    let phone = unhex::<16>(phone).ok_or("Unknown phone")?;
+    let files = state
+        .selections
+        .lock()
+        .expect("lock")
+        .remove(&selection_id)
+        .ok_or("Selection expired — pick the files again")?;
+    let id = state.id();
+    let events = Arc::new(PhoneOfferEvents {
+        app: app.clone(),
+        id,
+    });
+    // Tracked like other sends so an update waits for it; added first so a
+    // quick finish can't leave a stale entry behind.
+    state
+        .outgoing
+        .lock()
+        .expect("lock")
+        .insert(id, Arc::new(Notify::new()));
+    if let Err(e) = state.link.offer(id, phone, files.clone(), events) {
+        state.outgoing.lock().expect("lock").remove(&id);
+        // Keep the selection so the user can pick another device.
+        state.selections.lock().expect("lock").insert(selection_id, files);
+        return Err(e);
+    }
+    Ok(id)
+}
+
+struct PhoneOfferEvents {
+    app: AppHandle,
+    id: u64,
+}
+
+impl OfferEvents for PhoneOfferEvents {
+    fn status(&self, status: SendStatus) {
+        let _ = self.app.emit("send-status", SendStatusDto { id: self.id, status });
+    }
+
+    fn finished(&self, result: SendOutcome) {
+        if let Some(state) = self.app.try_state::<AppState>() {
+            state.outgoing.lock().expect("lock").remove(&self.id);
+        }
+        let _ = self
+            .app
+            .emit("send-finished", SendFinishedDto { id: self.id, result });
+    }
+}
+
 #[tauri::command]
 pub fn cancel_send(state: State<'_, AppState>, id: u64) {
+    state.link.cancel_offer(id);
     if let Some(n) = state.outgoing.lock().expect("lock").get(&id) {
         n.notify_one();
     }

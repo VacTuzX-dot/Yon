@@ -66,6 +66,10 @@ export default function DeviceOrbit({ devices, activity, onPick, onCancel, error
                   </button>
                 )}
               </span>
+            ) : d.os === "phone" ? (
+              <span className="device-status">
+                {d.online ? "Phone" : "Phone · open Yon on it to receive"}
+              </span>
             ) : null}
           </li>
         );

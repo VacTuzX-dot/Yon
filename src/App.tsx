@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  allDevices,
   api,
   errorText,
   fileManagerName,
@@ -65,6 +66,7 @@ export default function App() {
     takeShared();
     const subs = [
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
+      on("phones-online", (online_phones) => setState((s) => (s ? { ...s, online_phones } : s))),
       on("incoming", (req) => setIncoming(req)),
       on("shared", () => takeShared()),
       on("update-available", (u) => setUpdate(u)),
@@ -159,6 +161,7 @@ export default function App() {
   if (fatal) return <main className="app"><p className="hint bad">{fatal}</p></main>;
   if (!state) return <main className="app" />;
 
+  const devices = allDevices(state);
   const activity: Record<string, DeviceActivity> = {};
   for (const o of Object.values(outgoing)) {
     activity[o.deviceId] = toActivity(o);
@@ -191,9 +194,9 @@ export default function App() {
       </header>
 
       <section className="stage">
-        <h1>{state.devices.length ? "Choose a device to send to" : "Looking for devices nearby"}</h1>
+        <h1>{devices.length ? "Choose a device to send to" : "Looking for devices nearby"}</h1>
         <DeviceOrbit
-          devices={state.devices}
+          devices={devices}
           activity={activity}
           onPick={pickFor}
           onCancel={cancelFor}
@@ -257,7 +260,7 @@ export default function App() {
       {shared && (
         <SharePicker
           selection={shared}
-          devices={state.devices}
+          devices={devices}
           onPick={(device) => {
             setShared(null);
             sendTo(device, shared);
