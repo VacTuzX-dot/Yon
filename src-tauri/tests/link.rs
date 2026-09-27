@@ -480,7 +480,7 @@ async fn serve_page_for_browser() {
     ];
     let (link, phone) = (env.link.clone(), env.phone.id);
     tokio::spawn(async move {
-        for id in 1.. {
+        for id in 1..=u64::MAX {
             let (ev, done) = events();
             if link.offer(id, phone, files.clone(), ev.clone()).is_ok() {
                 println!("offer {id}: {:?}", done.await);
