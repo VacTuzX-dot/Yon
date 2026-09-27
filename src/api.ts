@@ -96,6 +96,7 @@ export const api = {
   cancelReceive: (id: number) => invoke<void>("cancel_receive", { id }),
   reveal: (id: number) => invoke<void>("reveal", { id }),
   forgetReceived: (id: number) => invoke<void>("forget_received", { id }),
+  takeShared: () => invoke<Selection | null>("take_shared"),
   updateSettings: (deviceName: string, port: number) =>
     invoke<AppState>("update_settings", { deviceName, port }),
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),
@@ -105,6 +106,7 @@ export const api = {
 export interface Events {
   devices: Device[];
   incoming: Incoming;
+  shared: null;
   "recv-started": { id: number; sender_name: string; total: number };
   "recv-progress": Progress;
   "recv-finished": RecvFinished;

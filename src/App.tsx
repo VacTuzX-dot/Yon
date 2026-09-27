@@ -20,6 +20,7 @@ import DeviceOrbit, { initials, type DeviceActivity } from "./components/DeviceO
 import IncomingDialog from "./components/IncomingDialog";
 import Ring from "./components/Ring";
 import SettingsSheet from "./components/SettingsSheet";
+import SharePicker from "./components/SharePicker";
 
 interface Outgoing {
   deviceId: string;
@@ -43,6 +44,7 @@ export default function App() {
   const [fatal, setFatal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ device: Device; selection: Selection } | null>(null);
+  const [shared, setShared] = useState<Selection | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [incoming, setIncoming] = useState<Incoming | null>(null);
   const [outgoing, setOutgoing] = useState<Record<number, Outgoing>>({});
@@ -51,9 +53,16 @@ export default function App() {
 
   useEffect(() => {
     api.getState().then(setState, (e) => setFatal(errorText(e)));
+    // Files from Send to / Open With may have arrived before we loaded.
+    const takeShared = () =>
+      api.takeShared().then((sel) => {
+        if (sel) setShared(sel);
+      });
+    takeShared();
     const subs = [
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
       on("incoming", (req) => setIncoming(req)),
+      on("shared", () => takeShared()),
       on("recv-started", (r) =>
         setReceiving((list) => [...list, { id: r.id, from: r.sender_name, done: 0, total: r.total }]),
       ),
@@ -106,10 +115,7 @@ export default function App() {
     setConfirm(null);
   }, [confirm]);
 
-  const send = useCallback(async () => {
-    if (!confirm) return;
-    const { device, selection } = confirm;
-    setConfirm(null);
+  const sendTo = useCallback(async (device: Device, selection: Selection) => {
     try {
       const id = await api.send(selection.id, device.id);
       setOutgoing((m) => {
@@ -122,7 +128,13 @@ export default function App() {
     } catch (e) {
       setError(errorText(e));
     }
-  }, [confirm]);
+  }, []);
+
+  const send = useCallback(() => {
+    if (!confirm) return;
+    setConfirm(null);
+    sendTo(confirm.device, confirm.selection);
+  }, [confirm, sendTo]);
 
   const answer = useCallback(
     (accept: boolean, trust: boolean) => {
@@ -241,6 +253,20 @@ export default function App() {
         You appear as <strong>{state.me.name}</strong>
       </footer>
 
+      {shared && (
+        <SharePicker
+          selection={shared}
+          devices={state.devices}
+          onPick={(device) => {
+            setShared(null);
+            sendTo(device, shared);
+          }}
+          onClose={() => {
+            api.clearSelection(shared.id);
+            setShared(null);
+          }}
+        />
+      )}
       {confirm && (
         <ConfirmSheet
           device={confirm.device}

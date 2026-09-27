@@ -38,12 +38,25 @@ impl Throttle {
 pub fn run() {
     use tauri::Manager;
 
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    // Must be the first plugin: a second launch (Windows "Send to") hands its
+    // arguments to the running instance instead of starting another one.
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
+        app::show_main(app);
+        app::open_paths(app, app::paths_from_args(&args, std::path::Path::new(&cwd)));
+    }));
+    let app = builder
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let state = app::setup(app.handle())?;
             app.manage(state);
             app::setup_tray(app.handle())?;
+            // First launch from "Send to": files arrive as arguments.
+            let args: Vec<String> = std::env::args().collect();
+            if let Ok(cwd) = std::env::current_dir() {
+                app::open_paths(app.handle(), app::paths_from_args(&args, &cwd));
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -74,15 +87,25 @@ pub fn run() {
             app::set_close_to_tray,
             app::untrust,
             app::forget_received,
+            app::take_shared,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
     app.run(|_app, _event| {
-        // Clicking the Dock icon brings the hidden window back.
         #[cfg(target_os = "macos")]
-        if let tauri::RunEvent::Reopen { .. } = _event {
-            app::show_main(_app);
+        match _event {
+            // Clicking the Dock icon brings the hidden window back.
+            tauri::RunEvent::Reopen { .. } => app::show_main(_app),
+            // Finder "Open With → Yon" or files dropped on the Dock icon.
+            tauri::RunEvent::Opened { urls } => {
+                let paths = urls
+                    .into_iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .collect();
+                app::open_paths(_app, paths);
+            }
+            _ => {}
         }
     });
 }

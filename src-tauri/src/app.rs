@@ -35,6 +35,8 @@ pub struct AppState {
     discovery_error: Option<String>,
     devices: Arc<Mutex<Vec<Device>>>,
     selections: Mutex<HashMap<u64, Vec<OutFile>>>,
+    /// Files handed to us by the OS (Send to / Open With), waiting for the UI.
+    shared: Mutex<Option<SelectionDto>>,
     outgoing: Mutex<HashMap<u64, Arc<Notify>>>,
     received: Arc<Mutex<HashMap<u64, Vec<PathBuf>>>>,
     pending: Arc<Mutex<HashMap<u64, Pending>>>,
@@ -68,7 +70,7 @@ pub struct SettingsDto {
     trusted: Vec<settings::TrustedDevice>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct SelectionDto {
     id: u64,
     files: Vec<FileDto>,
@@ -302,6 +304,7 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         discovery_error,
         devices,
         selections: Mutex::new(HashMap::new()),
+        shared: Mutex::new(None),
         outgoing: Mutex::new(HashMap::new()),
         received,
         pending,
@@ -366,6 +369,40 @@ impl AppState {
         cfg!(target_os = "macos") || self.settings.lock().expect("lock").close_to_tray
     }
 
+    /// Turn paths into a stored selection. Only existing regular files are
+    /// kept (Phase 1 sends files, not folders); the UI gets names and sizes.
+    fn make_selection(&self, paths: Vec<PathBuf>) -> Option<SelectionDto> {
+        let files: Vec<OutFile> = paths
+            .into_iter()
+            .filter_map(|path| {
+                let meta = std::fs::metadata(&path).ok()?;
+                meta.is_file().then(|| OutFile {
+                    name: file_name(&path),
+                    size: meta.len(),
+                    path,
+                })
+            })
+            .take(crate::protocol::MAX_FILES)
+            .collect();
+        if files.is_empty() {
+            return None;
+        }
+        let id = self.id();
+        let dto = SelectionDto {
+            id,
+            total: files.iter().map(|f| f.size).sum(),
+            files: files
+                .iter()
+                .map(|f| FileDto {
+                    name: f.name.clone(),
+                    size: f.size,
+                })
+                .collect(),
+        };
+        self.selections.lock().expect("lock").insert(id, files);
+        Some(dto)
+    }
+
     fn id(&self) -> u64 {
         self.next_id.fetch_add(1, Ordering::Relaxed)
     }
@@ -405,37 +442,11 @@ pub async fn pick_files(
     let Some(picked) = picked else {
         return Ok(None);
     };
-    let mut files = Vec::new();
+    let mut paths = Vec::new();
     for fp in picked {
-        let path = fp.into_path().map_err(|e| e.to_string())?;
-        let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-        // Phase 1 sends files only (folders are Phase 2).
-        if !meta.is_file() {
-            continue;
-        }
-        files.push(OutFile {
-            name: file_name(&path),
-            size: meta.len(),
-            path,
-        });
+        paths.push(fp.into_path().map_err(|e| e.to_string())?);
     }
-    if files.is_empty() {
-        return Ok(None);
-    }
-    let id = state.id();
-    let dto = SelectionDto {
-        id,
-        total: files.iter().map(|f| f.size).sum(),
-        files: files
-            .iter()
-            .map(|f| FileDto {
-                name: f.name.clone(),
-                size: f.size,
-            })
-            .collect(),
-    };
-    state.selections.lock().expect("lock").insert(id, files);
-    Ok(Some(dto))
+    Ok(state.make_selection(paths))
 }
 
 #[tauri::command]
@@ -684,4 +695,63 @@ pub fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 #[tauri::command]
 pub fn forget_received(state: State<'_, AppState>, id: u64) {
     state.received.lock().expect("lock").remove(&id);
+}
+
+// ---------- files handed over by the OS ----------
+
+/// Paths from a command line (Windows "Send to" runs `yon.exe <files…>`).
+/// Skips the program name and flags; relative paths resolve against `cwd`.
+pub fn paths_from_args(args: &[String], cwd: &Path) -> Vec<PathBuf> {
+    args.iter()
+        .skip(1)
+        .filter(|a| !a.starts_with('-'))
+        .map(|a| cwd.join(a))
+        .collect()
+}
+
+/// Files from "Send to" / "Open With" / Dock drop: stash them and bring the
+/// window up with a device picker. Never sends on its own — any local
+/// program can launch us with paths, so a person must pick and confirm.
+pub fn open_paths(app: &AppHandle, paths: Vec<PathBuf>) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    let Some(selection) = state.make_selection(paths) else {
+        return;
+    };
+    if let Some(old) = state.shared.lock().expect("lock").replace(selection) {
+        state.selections.lock().expect("lock").remove(&old.id);
+    }
+    let _ = app.emit("shared", ());
+    show_main(app);
+}
+
+/// The UI asks for pending OS-shared files (on load, and on each "shared").
+#[tauri::command]
+pub fn take_shared(state: State<'_, AppState>) -> Option<SelectionDto> {
+    state.shared.lock().expect("lock").take()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::paths_from_args;
+    use std::path::{Path, PathBuf};
+
+    #[test]
+    fn args_skip_program_and_flags_and_resolve_relative() {
+        let cwd = Path::new(if cfg!(windows) { "C:\\work" } else { "/work" });
+        let abs = if cfg!(windows) {
+            "C:\\x\\a.txt"
+        } else {
+            "/x/a.txt"
+        };
+        let args: Vec<String> = ["yon.exe", "--flag", abs, "b.txt"]
+            .map(String::from)
+            .to_vec();
+        assert_eq!(
+            paths_from_args(&args, cwd),
+            vec![PathBuf::from(abs), cwd.join("b.txt")]
+        );
+        assert!(paths_from_args(&["yon".to_string()], cwd).is_empty());
+    }
 }

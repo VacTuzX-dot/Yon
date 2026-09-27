@@ -7,6 +7,23 @@
 	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Yon finds nearby devices and receives files over your local network.</string>
+	<!-- Finder "Open With → Yon" and dropping files on the Dock icon.
+	     Alternate rank: listed, but never becomes anyone's default app. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Any file</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>public.data</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_yon._tcp</string>
