@@ -1,0 +1,38 @@
+[
+  {
+    "counter": "1",
+    "dir": 1,
+    "k": "1111111111111111111111111111111111111111111111111111111111111111",
+    "name": "chunk",
+    "nc": "33333333333333333333333333333333",
+    "ns": "22222222222222222222222222222222",
+    "plain": "hello yon",
+    "route": "POST /chunk",
+    "sealed": "c07d8eaa66729371e0b461568b758b6bf8d19c3bed8dab186c",
+    "sid": "44444444444444444444444444444444"
+  },
+  {
+    "counter": "42",
+    "dir": 2,
+    "k": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
+    "name": "reply",
+    "nc": "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2",
+    "ns": "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1",
+    "plain": "{\"ok\":true}",
+    "route": "POST /request",
+    "sealed": "a57b7422dd1ed73f22dc8ebf67337022f3e36c28b6a28657ee90c5",
+    "sid": "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3"
+  },
+  {
+    "counter": "18446744073709551615",
+    "dir": 1,
+    "k": "0000000000000000000000000000000000000000000000000000000000000000",
+    "name": "empty",
+    "nc": "01010101010101010101010101010101",
+    "ns": "ffffffffffffffffffffffffffffffff",
+    "plain": "",
+    "route": "POST /done",
+    "sealed": "8974eefd319f084a0db7013149ae5a85",
+    "sid": "02020202020202020202020202020202"
+  }
+]

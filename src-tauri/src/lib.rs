@@ -2,6 +2,7 @@ mod app;
 pub mod client;
 pub mod discovery;
 pub mod identity;
+pub mod link;
 pub mod platform;
 pub mod protocol;
 pub mod sanitize;

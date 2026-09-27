@@ -49,6 +49,9 @@ jobs:
       - name: Lint (no dangerouslySetInnerHTML)
         run: bun run lint
 
+      - name: JS tests (Yon Link crypto vectors)
+        run: bun run test
+
       # tauri::generate_context! needs the built frontend (frontendDist) to exist.
       - name: Build frontend
         run: bun run build
