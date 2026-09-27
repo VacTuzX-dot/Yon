@@ -67,6 +67,7 @@ pub struct SettingsDto {
     save_dir: String,
     port: u16,
     close_to_tray: bool,
+    show_in_dock: bool,
     trusted: Vec<settings::TrustedDevice>,
 }
 
@@ -359,8 +360,13 @@ impl AppState {
             save_dir: s.save_dir.display().to_string(),
             port: s.port,
             close_to_tray: s.close_to_tray,
+            show_in_dock: s.show_in_dock,
             trusted: s.trusted.clone(),
         }
+    }
+
+    pub fn settings_show_in_dock(&self) -> bool {
+        self.settings.lock().expect("lock").show_in_dock
     }
 
     /// Whether closing the main window should hide it instead of quitting.
@@ -631,6 +637,30 @@ pub fn set_close_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<Se
             .map_err(|e| format!("Could not save settings: {e}"))?;
     }
     Ok(state.settings_dto())
+}
+
+#[tauri::command]
+pub fn set_show_in_dock(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<SettingsDto, String> {
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.show_in_dock = enabled;
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    apply_dock_visibility(&app, enabled);
+    Ok(state.settings_dto())
+}
+
+/// macOS: hide/show the Dock icon. Yon stays reachable from the menu bar.
+pub fn apply_dock_visibility(_app: &AppHandle, _visible: bool) {
+    #[cfg(target_os = "macos")]
+    if let Err(e) = _app.set_dock_visibility(_visible) {
+        eprintln!("[yon] could not change Dock visibility: {e}");
+    }
 }
 
 // ---------- window + tray ----------

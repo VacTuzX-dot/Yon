@@ -18,6 +18,9 @@ pub struct Settings {
     /// macOS, where closing always hides. Missing in old files → true.
     #[serde(default = "default_true")]
     pub close_to_tray: bool,
+    /// macOS only: false = menu-bar-only app (no Dock icon).
+    #[serde(default = "default_true")]
+    pub show_in_dock: bool,
     /// Devices whose transfers are accepted without asking. Matched by the
     /// key fingerprint proven in the TLS handshake — never by name.
     #[serde(default)]
@@ -45,6 +48,7 @@ impl Settings {
             save_dir: downloads.join("Yon"),
             port: crate::server::DEFAULT_PORT,
             close_to_tray: true,
+            show_in_dock: true,
             trusted: Vec::new(),
         }
     }
@@ -149,6 +153,7 @@ mod tests {
             save_dir: dir.join("y"),
             port: 60000,
             close_to_tray: false,
+            show_in_dock: false,
             trusted: vec![TrustedDevice {
                 id: "ab".repeat(32),
                 name: "Desk".into(),
@@ -186,7 +191,8 @@ mod tests {
             serde_json::to_string(&dir).unwrap()
         );
         fs::write(dir.join(FILE), json).unwrap();
-        assert!(Settings::load(&dir, Path::new("/d")).close_to_tray);
+        let s = Settings::load(&dir, Path::new("/d"));
+        assert!(s.close_to_tray && s.show_in_dock);
         fs::remove_dir_all(dir).unwrap();
     }
 

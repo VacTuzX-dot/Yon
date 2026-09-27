@@ -25,6 +25,16 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
     }
   }
 
+  async function toggleDock(enabled: boolean) {
+    setError(null);
+    try {
+      const settings = await api.setShowInDock(enabled);
+      onChange({ ...state, settings });
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
   async function toggleTray(enabled: boolean) {
     setError(null);
     try {
@@ -82,6 +92,19 @@ export default function SettingsSheet({ state, onChange, onClose }: Props) {
             </button>
           </div>
         </div>
+        {isMac && (
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={state.settings.show_in_dock}
+              onChange={(e) => toggleDock(e.target.checked)}
+            />
+            <span>
+              Show Yon in the Dock
+              <span className="hint">When off, Yon lives in the menu bar only.</span>
+            </span>
+          </label>
+        )}
         {!isMac && (
           <label className="toggle">
             <input

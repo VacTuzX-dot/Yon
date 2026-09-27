@@ -50,8 +50,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let state = app::setup(app.handle())?;
+            let show_in_dock = state.settings_show_in_dock();
             app.manage(state);
             app::setup_tray(app.handle())?;
+            if !show_in_dock {
+                app::apply_dock_visibility(app.handle(), false);
+            }
             // First launch from "Send to": files arrive as arguments.
             let args: Vec<String> = std::env::args().collect();
             if let Ok(cwd) = std::env::current_dir() {
@@ -88,6 +92,7 @@ pub fn run() {
             app::untrust,
             app::forget_received,
             app::take_shared,
+            app::set_show_in_dock,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

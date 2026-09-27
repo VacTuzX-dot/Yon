@@ -17,6 +17,7 @@ export interface Settings {
   save_dir: string;
   port: number;
   close_to_tray: boolean;
+  show_in_dock: boolean;
   trusted: { id: string; name: string }[];
 }
 
@@ -101,6 +102,7 @@ export const api = {
     invoke<AppState>("update_settings", { deviceName, port }),
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),
   setCloseToTray: (enabled: boolean) => invoke<Settings>("set_close_to_tray", { enabled }),
+  setShowInDock: (enabled: boolean) => invoke<Settings>("set_show_in_dock", { enabled }),
 };
 
 export interface Events {
