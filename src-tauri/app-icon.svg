@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Yon app icon: a file tossed mid-flight. Source for `bun tauri icon`. -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#E8A317"/>
+  <g transform="translate(100 100) scale(6.3385) translate(-195 -30)">
+    <path d="M206 114 L222 110" fill="none" stroke="#1E222B" stroke-width="5" stroke-linecap="round" opacity="0.45"/>
+    <path d="M210 128 L226 124" fill="none" stroke="#1E222B" stroke-width="5" stroke-linecap="round" opacity="0.45"/>
+    <g transform="rotate(-18 262 97)">
+      <path d="M246 66 H274 L288 80 V122 Q288 128 282 128 H246 Q240 128 240 122 V72 Q240 66 246 66 Z" fill="#1E222B"/>
+      <path d="M274 66 V80 H288 Z" fill="#4A5060"/>
+    </g>
+  </g>
+</svg>
