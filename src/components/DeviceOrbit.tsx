@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Device } from "../api";
 import { group, isReady, kindOf, labels, matches, osName, type Kind } from "../devices";
+import DeviceMenu, { type MenuItem } from "./DeviceMenu";
 import Ring from "./Ring";
 
 export interface DeviceActivity {
@@ -22,6 +23,8 @@ interface Props {
   dropTarget: string | null;
   onPick: (d: Device) => void;
   onCancel: (d: Device) => void;
+  /** Actions for the device's "⋯" menu; none → no button. */
+  menuFor: (d: Device) => MenuItem[];
   error: string | null;
 }
 
@@ -65,7 +68,7 @@ function statusOf(d: Device, a: DeviceActivity | undefined): { text: string; ton
   if (!d.compatible) return { text: "Update Yon to connect" };
   if (a) return { text: a.label, tone: a.tone };
   if (d.os === "phone") {
-    return { text: d.online ? "Phone · Yon open" : "Open Yon on it to receive" };
+    return { text: d.online ? "Phone · Yon open" : "Not open" };
   }
   return { text: osName(d) };
 }
@@ -78,6 +81,7 @@ export default function DeviceOrbit({
   dropTarget,
   onPick,
   onCancel,
+  menuFor,
   error,
 }: Props) {
   const [query, setQuery] = useState("");
@@ -120,7 +124,10 @@ export default function DeviceOrbit({
                 {a?.busy && <Ring progress={a.progress} />}
                 <DeviceIcon kind={kindOf(d)} />
               </button>
-              <span className="device-name">{names[d.id]}</span>
+              <span className="device-name">
+                {names[d.id]}
+                <DeviceMenu name={names[d.id]} items={menuFor(d)} />
+              </span>
               <span className={`device-status${st.tone ? ` ${st.tone}` : ""}`} role={a ? "status" : undefined}>
                 {st.text}
                 {a?.busy && (
@@ -173,6 +180,7 @@ export default function DeviceOrbit({
             Cancel
           </button>
         )}
+        <DeviceMenu name={names[d.id]} items={menuFor(d)} />
       </li>
     );
   };
@@ -195,7 +203,8 @@ export default function DeviceOrbit({
       )}
       {waitingShown.length > 0 && (
         <section aria-label="Phones to open">
-          <h2 className="group-label">Phones · open Yon on them to receive</h2>
+          <h2 className="group-label">Phones</h2>
+          <p className="group-hint">They can receive once you tap the Yon icon on the phone.</p>
           <ul className="waiting">{waitingShown.map(row)}</ul>
         </section>
       )}

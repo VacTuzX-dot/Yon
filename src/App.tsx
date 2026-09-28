@@ -26,7 +26,8 @@ import { LogoShapes } from "./components/Logo";
 import Ring from "./components/Ring";
 import SettingsSheet from "./components/SettingsSheet";
 import SharePicker from "./components/SharePicker";
-import StopSheet from "./components/StopSheet";
+import AskSheet from "./components/AskSheet";
+import type { MenuItem } from "./components/DeviceMenu";
 import UpdateBar from "./components/UpdateBar";
 
 interface Outgoing {
@@ -55,8 +56,17 @@ export default function App() {
   const [confirm, setConfirm] = useState<{ device: Device; selection: Selection } | null>(null);
   const [shared, setShared] = useState<Selection | null>(null);
   const [pairing, setPairing] = useState(false);
+  /** Content has scrolled under the header: it turns to glass only then. */
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
   /** Device whose send the user wants to stop; asks before cancelling. */
   const [stopping, setStopping] = useState<Device | null>(null);
+  /** Phone the user asked to remove; asks before unpairing. */
+  const [removing, setRemoving] = useState<Device | null>(null);
   /** Files are being dragged over the window; the device id under them, if any. */
   const [dragging, setDragging] = useState<{ over: string | null; files: number } | null>(null);
   // Listeners are set up once; they read the latest device list from here.
@@ -98,10 +108,15 @@ export default function App() {
       return devicesRef.current.find((d) => d.id === el?.dataset.deviceId) ?? null;
     };
     const subs = [
+      // WHY: "Over" fires for every pointer move; keep the same object while
+      // the device under the pointer is unchanged so React skips the render.
       on("drop-hover", (at) =>
-        setDragging((prev) =>
-          at ? { over: deviceAt(at.x, at.y)?.id ?? null, files: at.files ?? prev?.files ?? 0 } : null,
-        ),
+        setDragging((prev) => {
+          if (!at) return null;
+          const over = deviceAt(at.x, at.y)?.id ?? null;
+          const files = at.files ?? prev?.files ?? 0;
+          return prev && prev.over === over && prev.files === files ? prev : { over, files };
+        }),
       ),
       // WHY: a drop is a deliberate gesture, but the send still goes through
       // the confirm sheet (or the picker when it missed a device).
@@ -234,6 +249,26 @@ export default function App() {
   for (const o of Object.values(outgoing)) {
     activity[o.deviceId] = toActivity(o);
   }
+  const trusted = new Set(state.settings.trusted.map((t) => t.id));
+  /** What the "⋯" menu offers: only actions that exist for that device. */
+  const menuFor = (d: Device): MenuItem[] => {
+    if (d.os === "phone") {
+      return [{ label: "Remove phone…", danger: true, onSelect: () => setRemoving(d) }];
+    }
+    if (trusted.has(d.id)) {
+      return [
+        {
+          label: "Stop accepting automatically",
+          onSelect: () =>
+            api
+              .untrust(d.id)
+              .then((settings) => setState((s) => (s ? { ...s, settings } : s)))
+              .catch((e) => setError(errorText(e))),
+        },
+      ];
+    }
+    return [];
+  };
   const cancelFor = (d: Device) => {
     const entry = Object.entries(outgoing).find(([, o]) => o.deviceId === d.id && !o.result);
     if (entry) api.cancelSend(Number(entry[0])).catch((e) => setError(errorText(e)));
@@ -241,7 +276,7 @@ export default function App() {
 
   return (
     <main className="app">
-      <header>
+      <header className={scrolled ? "scrolled" : undefined}>
         <span className="wordmark">
           <svg className="logo" viewBox="195 30 130 130" aria-hidden>
             <LogoShapes />
@@ -274,6 +309,7 @@ export default function App() {
             dropTarget={dragging?.over ?? null}
             onPick={pickFor}
             onCancel={setStopping}
+            menuFor={menuFor}
             error={state.discovery_error}
           />
         </DropZone>
@@ -332,7 +368,7 @@ export default function App() {
       <button
         type="button"
         onClick={() => setPairing(true)}
-        className="fixed right-6 bottom-6 z-10 flex min-h-12 items-center gap-2 rounded-full border-0 bg-accent py-3 pr-5 pl-4 shadow-[0_10px_30px_-10px_var(--accent)] transition-[transform,filter] duration-150 ease-snappy hover:brightness-105 motion-safe:active:scale-[0.97]"
+        className="fixed right-6 bottom-6 z-10 flex min-h-12 items-center gap-2 rounded-full border border-white/40 bg-accent/85 py-3 pr-5 pl-4 shadow-[inset_0_1px_0_rgb(255_255_255/0.55),0_12px_32px_-10px_var(--accent)] backdrop-blur-xl backdrop-saturate-150 transition-[transform,filter] duration-150 ease-snappy hover:brightness-105 motion-safe:active:scale-[0.97]"
       >
         <svg
           viewBox="0 0 24 24"
@@ -374,13 +410,33 @@ export default function App() {
         />
       )}
       {stopping && stoppingBusy && (
-        <StopSheet
-          deviceName={stopping.name}
-          onStop={() => {
+        <AskSheet
+          title={`Stop sending to ${stopping.name}?`}
+          body={`The file being sent is removed from ${stopping.name}. Files that already arrived stay there.`}
+          keep="Keep sending"
+          confirm="Stop sending"
+          onConfirm={() => {
             cancelFor(stopping);
             setStopping(null);
           }}
           onClose={() => setStopping(null)}
+        />
+      )}
+      {removing && (
+        <AskSheet
+          title={`Remove ${removing.name}?`}
+          body="Its Yon icon stops working right away. To use it again, pair it again."
+          keep="Cancel"
+          confirm="Remove"
+          onConfirm={() => {
+            const id = removing.id.replace(/^phone:/, "");
+            setRemoving(null);
+            api
+              .unpairPhone(id)
+              .then((settings) => setState((s) => (s ? { ...s, settings } : s)))
+              .catch((e) => setError(errorText(e)));
+          }}
+          onClose={() => setRemoving(null)}
         />
       )}
       {pairing && (

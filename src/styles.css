@@ -146,8 +146,14 @@ footer strong {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 36px;
+  gap: 24px;
   padding: 24px 0;
+}
+
+/* A long list reads from the top; only the few circles sit centred. */
+.stage:has(.device-list) {
+  justify-content: flex-start;
+  padding-top: 12px;
 }
 
 h1 {
@@ -334,7 +340,10 @@ button.avatar:disabled:has(.ring) {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding-right: 12px;
+}
+
+.device-row > .link {
+  margin-right: 14px;
 }
 
 .device-row + .device-row {
@@ -352,10 +361,6 @@ button.avatar:disabled:has(.ring) {
   border: 0;
   background: transparent;
   text-align: left;
-}
-
-.row-main:hover:not(:disabled) {
-  background: var(--avatar);
 }
 
 .row-main:disabled {
@@ -397,7 +402,20 @@ button.avatar:disabled:has(.ring) {
   flex: none;
 }
 
+/* Phones without Yon open: same row, quieter, with an open (dashed)
+   icon ring that says "not connected yet" without relying on colour. */
 .waiting .device-name {
+  color: var(--muted);
+}
+
+.waiting .avatar.small {
+  background: transparent;
+  border: 1.5px dashed var(--line);
+}
+
+.group-hint {
+  margin: -2px 4px 8px;
+  font-size: 13px;
   color: var(--muted);
 }
 
@@ -878,7 +896,11 @@ details .field {
 
 @media (max-width: 520px) {
   .app {
-    padding: 14px 16px;
+    padding: 14px 16px 88px;
+  }
+  header {
+    margin: -14px -16px 0;
+    padding: 10px 16px;
   }
   .orbit {
     gap: 20px 24px;
@@ -975,4 +997,249 @@ details .field {
   color: var(--surface);
   font-size: 28px;
   font-weight: 700;
+}
+
+/* ---------- liquid glass ----------
+   Surfaces are a translucent material over a softly lit backdrop: blurred
+   and saturated, a bright top edge where light catches it, thicker (more
+   opaque, more blur) the bigger the surface. Solid again for people who ask
+   for less transparency, with a clear border when they ask for contrast. */
+
+:root {
+  --glass: rgb(255 255 255 / 0.56);
+  --glass-thick: rgb(255 255 255 / 0.74);
+  --glass-hover: rgb(255 255 255 / 0.45);
+  --glass-edge: rgb(255 255 255 / 0.8);
+  --glass-line: rgb(30 34 43 / 0.08);
+  --glass-blur: blur(22px) saturate(180%);
+  --glass-blur-thick: blur(26px) saturate(180%);
+  --glass-shadow: 0 1px 1px rgb(20 24 32 / 0.04), 0 14px 34px -14px rgb(20 24 32 / 0.22);
+  --ease-out-strong: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --glass: rgb(40 44 54 / 0.48);
+    --glass-thick: rgb(34 38 46 / 0.72);
+    --glass-hover: rgb(255 255 255 / 0.06);
+    --glass-edge: rgb(255 255 255 / 0.14);
+    --glass-line: rgb(255 255 255 / 0.07);
+    --glass-shadow: 0 1px 1px rgb(0 0 0 / 0.2), 0 18px 40px -16px rgb(0 0 0 / 0.6);
+  }
+}
+
+/* Something for the glass to bend: two soft glows on their own fixed
+   layer. WHY: `background-attachment: fixed` on body repaints the whole
+   page (and re-blurs every glass surface) on each scroll frame; a fixed
+   layer is painted once and just composited. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(42rem 30rem at 8% -10%, color-mix(in oklab, var(--accent) 24%, transparent), transparent 70%),
+    radial-gradient(38rem 32rem at 104% 110%, color-mix(in oklab, #5b8def 20%, transparent), transparent 70%);
+}
+
+/* Blur (the expensive part) only on the few large floating surfaces; small
+   controls get the translucent tint and bright edge without it. */
+.device-list ul,
+.tray li,
+.update-bar {
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+
+.device-list ul,
+.device-search,
+.orbit button.avatar,
+.tray li,
+.update-bar {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-edge), var(--glass-shadow);
+}
+
+.device-row + .device-row {
+  border-top-color: var(--glass-line);
+}
+
+/* Hover lights the whole row, edge to edge (Cancel sits inside it). */
+.device-row:has(.row-main:hover:not(:disabled)) {
+  background: var(--glass-hover);
+}
+
+/* Clear at the top; glass only once content scrolls under it (a scroll
+   edge effect instead of a permanent bar). */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  margin: -18px -24px 0;
+  padding: 12px 24px;
+  transition:
+    background-color 200ms var(--ease-out-strong),
+    box-shadow 200ms var(--ease-out-strong);
+}
+
+header.scrolled {
+  background: color-mix(in oklab, var(--bg) 62%, transparent);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: 0 1px 0 var(--glass-line);
+}
+
+/* Sheets: the thickest material, dimming and softening what's behind. */
+.sheet {
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: var(--glass-blur-thick);
+  backdrop-filter: var(--glass-blur-thick);
+  border: 1px solid var(--glass-line);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 30px 70px -24px rgb(0 0 0 / 0.45);
+}
+
+/* Dim only: a full-window blur behind every sheet costs more than it adds. */
+.sheet::backdrop {
+  background: rgb(20 22 28 / 0.36);
+}
+
+.sheet .actions {
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border-top-color: var(--glass-line);
+}
+
+/* A sheet materializes: fades in while settling from slightly smaller. */
+@media (prefers-reduced-motion: no-preference) {
+  .sheet[open] {
+    transition:
+      opacity 240ms var(--ease-out-strong),
+      transform 240ms var(--ease-out-strong);
+  }
+  .sheet[open]::backdrop {
+    transition: opacity 240ms var(--ease-out-strong);
+  }
+  @starting-style {
+    .sheet[open] {
+      opacity: 0;
+      transform: translateY(8px) scale(0.97);
+    }
+    .sheet[open]::backdrop {
+      opacity: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet[open] {
+    transition: opacity 160ms ease;
+  }
+  @starting-style {
+    .sheet[open] {
+      opacity: 0;
+    }
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --glass: var(--surface);
+    --glass-thick: var(--surface);
+    --glass-hover: var(--avatar);
+    --glass-blur: none;
+    --glass-blur-thick: none;
+  }
+  body::before {
+    display: none;
+  }
+  header.scrolled {
+    background: var(--bg);
+  }
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --glass-line: color-mix(in oklab, var(--ink) 35%, transparent);
+  }
+}
+
+/* ---------- "⋯" device menu ---------- */
+
+.more {
+  flex: none;
+  width: 32px;
+  height: 32px;
+}
+
+.more svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+.device-row > .more {
+  margin-right: 10px;
+}
+
+/* In the circles view the menu sits beside the name. */
+.device .device-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.device .more {
+  width: 28px;
+  height: 28px;
+}
+
+/* The popover's UA defaults centre it on screen; DeviceMenu places it. */
+.device-menu {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  color: var(--ink);
+  background: var(--glass-thick);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: inset 0 1px 0 var(--glass-edge), 0 16px 40px -12px rgb(0 0 0 / 0.4);
+}
+
+.device-menu button {
+  display: block;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  font-size: 14px;
+}
+
+.device-menu button:hover,
+.device-menu button:focus-visible {
+  background: var(--glass-hover);
+}
+
+.danger-text {
+  color: var(--bad);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .device-menu:popover-open {
+    transition: opacity 150ms var(--ease-out-strong), transform 150ms var(--ease-out-strong);
+  }
+  @starting-style {
+    .device-menu:popover-open {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
 }

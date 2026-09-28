@@ -21,8 +21,8 @@ export default function DropZone({ dragging, children }: Props) {
   return (
     <div
       className={[
-        "relative flex w-full max-w-[760px] flex-col items-center rounded-[28px] border-2 border-dashed px-6 py-10",
-        "transition-[background-color,border-color,box-shadow,transform] duration-300 ease-snappy",
+        "relative flex w-full max-w-[760px] flex-col items-center rounded-[28px] border-2 border-dashed px-4 py-5",
+        "transition-[background-color,border-color,transform] duration-200 ease-snappy",
         on
           ? "border-accent bg-accent/10 shadow-[0_0_56px_-16px_var(--accent)] motion-safe:scale-[1.01]"
           : "border-transparent",
