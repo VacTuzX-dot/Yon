@@ -39,12 +39,44 @@ service, presence events.
 
 | Field | Type | Meaning |
 |---|---|---|
-| `relay` | `String` | Relay this pairing was made for, as the normalized URL from `validate_relay_url` (e.g. `wss://relay.example.com`); empty = home Wi-Fi only. |
+| `relay` | `String` | Relay this pairing was made for, as the normalized URL (defined below); empty = home Wi-Fi only. |
 | `replaces` | `Option<String>` | Set only while pending: id of the pairing to remove once this one authenticates. |
 
 The existing `created: u64` (Unix seconds) is set to the time `pair_phone`
 creates the record and is persisted, so it doubles as the pending start
 time. No new timestamp field.
+
+### Normalized relay URL
+
+The **normalized URL** is exactly the string `validate_relay_url` returns.
+This design makes that return value canonical, so equivalent spellings of
+the same relay produce the same string:
+
+1. Trim surrounding whitespace.
+2. Lowercase the whole value. It holds only a scheme, a host and an
+   optional port (paths, queries and fragments are already rejected), and
+   all three are case-insensitive.
+3. Remove trailing `/`.
+4. Drop the default port: `:443` for `wss://`, `:80` for `ws://`.
+
+Examples, all normalizing to `wss://relay.example.com`:
+`WSS://Relay.Example.com`, `wss://relay.example.com/`,
+`wss://relay.example.com:443`, ` wss://relay.example.com `.
+
+Consequences:
+
+- **Equivalent forms never trigger "Pair again"**, because every comparison
+  is between normalized strings. `Settings::load` also stores the
+  normalized form of `relay_url`, so an override saved by an older version
+  is normalized on the next start.
+- **A different host, a non-default port or a different scheme does trigger
+  "Pair again"**, on purpose. The phone's link would point at a different
+  relay endpoint.
+- The phone page already lowercases the relay host it parses from the link
+  (`web/link.ts`), so the page and the computer agree on the form.
+
+Test `relay_url_canonical_forms` covers every example above, plus
+`wss://relay.example.com:8443` staying distinct.
 
 Functions (pure; the save step is injected so failures are testable):
 
@@ -200,7 +232,7 @@ other `new_id` (unknown, or not pending): `Ok(None)`.
 
 | File | Change |
 |---|---|
-| `src-tauri/src/settings.rs` | Fields, `effective_relay`, `phone_note`, `complete_replacement`, `cancel_pending`, `expire_pending`, `PENDING_TTL`, tests. |
+| `src-tauri/src/settings.rs` | Canonical `validate_relay_url` (normalized on load), fields, `effective_relay`, `phone_note`, `complete_replacement`, `cancel_pending`, `expire_pending`, `PENDING_TTL`, tests. |
 | `src-tauri/src/link/mod.rs` | `Session.authed`, `set_on_authenticated`, hook in `sealed()`. |
 | `src-tauri/src/app.rs` | Commands, wiring, expiry timer, DTOs, event, no Wi-Fi-only fallback in anywhere mode. |
 | `src-tauri/src/lib.rs` | Register `cancel_pairing`. |
@@ -229,6 +261,7 @@ other `new_id` (unknown, or not pending): `Ok(None)`.
 | `expiry_future_timestamp` | `created > now + 60` → removed. |
 | `expiry_ignores_completed` | `replaces == None` with an old `created` → kept. |
 | `effective_relay_order` | Override > default > none; invalid default ignored. |
+| `relay_url_canonical_forms` | Case, trailing `/`, default port and whitespace normalize to one string; a non-default port stays distinct. |
 | `phone_note_cases` | HomeOnly / NeedsRemote / none. |
 
 ### Integration (`tests/link.rs`)
@@ -243,6 +276,37 @@ the first valid sealed request in a session.
 `cargo clippy --all-targets --all-features -- -D warnings`,
 `bun test web/ relay/`, `bun run typecheck`, `bun run lint`.
 
+## Updater-key transition gate
+
+The old updater key (`4B3800D4DE072F1A`) was exposed and is treated as
+compromised. The updater trusts exactly one public key, baked into each
+build (`tauri-plugin-updater` `config.rs:116`). v0.2.1 is the transition
+release: signed with the old key so v0.2.0 accepts it, and embedding the new
+key (`424AB9F8F9EBF407`) so every later update must be signed with the new
+key. Each check below must pass, in order, before the next step. The
+rotation is complete only after G6.
+
+| # | Check | How | Required before |
+|---|---|---|---|
+| G1 | The v0.2.1 `.sig` files verify cryptographically with the **old** key and fail with the new key | OpenSSL Ed25519 on the draft files: BLAKE2b-512 prehash (`ED`), the file signature and the trusted-comment signature; `latest.json` signatures equal the `.sig` files | Publishing v0.2.1 |
+| G2 | v0.2.1 embeds the **new** public key and not the old one | The exact pubkey string in the macOS updater bundle's binary; the Windows `yon.exe` extracted from the NSIS installer | Publishing v0.2.1 |
+| G3 | The new **private** key matches the embedded public key | The maintainer signs a test file with `~/.tauri/yon-updater-v2.key` (the password is typed at a hidden prompt and never printed); the agent verifies the signature with the new public key | Rotating the GitHub secret |
+| G4 | v0.2.0 updates to v0.2.1 | After v0.2.1 is published: the Update button on v0.2.0 (macOS, and Windows if available) installs and relaunches v0.2.1 | Rotating the GitHub secret |
+| G5 | The GitHub secrets hold the new key | Replace both secrets from the file (no printing); then any build's `.sig` must verify with the new key and fail with the old one (G1 method, keys swapped) | Tagging v0.2.2 |
+| G6 | v0.2.1 accepts an update signed by the new key | The Update button on v0.2.1 installs and relaunches v0.2.2 | Declaring the rotation complete |
+
+Additional rules:
+
+- **Installs still on v0.2.0.** The updater reads only the latest
+  `latest.json`, so once v0.2.2 is published, a v0.2.0 install can no longer
+  update (v0.2.2 is signed with a key v0.2.0 does not trust). Before
+  publishing v0.2.2, confirm the known v0.2.0 installs have moved to v0.2.1.
+  Any that have not must reinstall by hand; the v0.2.2 release notes say so.
+- **The old private key** stays on the maintainer's machine until G6 passes
+  (no other use is planned), then the maintainer deletes it.
+- **If a gate fails**, nothing after it runs. The draft, tag and branch stay
+  as they are until the maintainer decides.
+
 ## Release order
 
 `relay.yml` is already on **local** `main` (`c9d81ed`, unpushed). The
@@ -252,12 +316,13 @@ places it on GitHub.
 | # | Step | Who |
 |---|---|---|
 | 0 | Create `production` with required reviewers, deployment rule tag `v*` (and branch `main` for manual runs); allow `tag:cicd` for the Tailscale OAuth client. Verified through the API before any push. | Maintainer, then verified |
-| 1 | Publish v0.2.1 → test the Update button from v0.2.0 → rotate the signing secrets to the new key. | Maintainer approves and tests |
+| 1 | Updater-key gate G1–G3 pass → publish v0.2.1 → G4 → rotate the signing secrets (G5). | Maintainer approves and tests |
 | 2 | Merge `release/v0.2.1` into local `main`, taking its version and pubkey. Not pushed. | Agent |
 | 3 | Implement this spec on a branch off `main`; full gate locally. | Agent |
 | 4 | Maintainer confirms the relay hostname → set `vars.YON_DEFAULT_RELAY`. | Maintainer |
-| 5 | Push `main` → bump to 0.2.2 → tag. Verify: `.sig` signed by the new key `424AB9F8F9EBF407`; built-in relay present in the binary; Relay deploy waits for approval; Pages. | Maintainer approves each push, tag, publish |
-| 6 | Acceptance: iPhone on cellular with the computer on another Wi-Fi; Pair again (success, cancel, expiry); relay restart and reconnect; failed deploy rolls back. | Maintainer and agent |
+| 5 | Push `main` → bump to 0.2.2 → tag. Verify: `.sig` verifies with the new key `424AB9F8F9EBF407` (G5); built-in relay present in the binary; Relay deploy waits for approval; Pages. Confirm v0.2.0 installs have moved on before publishing. | Maintainer approves each push, tag, publish |
+| 6 | Publish v0.2.2 → G6 (v0.2.1 updates to v0.2.2). | Maintainer approves and tests |
+| 7 | Acceptance: iPhone on cellular with the computer on another Wi-Fi; Pair again (success, cancel, expiry); relay restart and reconnect; failed deploy rolls back. | Maintainer and agent |
 
 ## Out of scope
 
