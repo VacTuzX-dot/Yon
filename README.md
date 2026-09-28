@@ -30,15 +30,23 @@ Download the latest build from [Releases](https://github.com/VacTuzX-dot/Yon/rel
 | macOS (Apple Silicon) | `Yon_x.y.z_aarch64.dmg` |
 | Windows (x64) | `Yon_x.y.z_x64-setup.exe` |
 
-The builds are not code-signed yet, so your OS will warn you the first time.
+The builds aren't notarized by Apple or signed for Windows, so your OS warns you the first time. What changed in each version, and known problems with their fixes: [CHANGELOG](CHANGELOG.md).
 
-**macOS:** open the `.dmg`, drag Yon to Applications, then right-click Yon → **Open** → **Open**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
+**macOS, from Terminal (skips the warning):**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash
+```
+
+The [script](install.sh) downloads the latest release, checks it against the release's `SHA256SUMS.txt` and the app's code signature, and puts Yon in `/Applications`, without `sudo`. Files fetched this way aren't marked as downloaded, so macOS opens Yon straight away. It trusts GitHub as much as the DMG does; read it first if you like. Run it again any time to reinstall.
+
+**macOS, from the DMG:** open the `.dmg`, drag Yon to Applications and open it. macOS says it "could not verify" Yon: open System Settings → Privacy & Security and click **Open Anyway**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
 
 **Windows:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
 
 ### Updates
 
-Yon checks GitHub Releases for a new version shortly after it starts and every few hours. When one is out, a bar at the bottom of the window says so: click **Update** and Yon downloads it, installs it over the old version and reopens. Files left behind by earlier updates are cleaned up on the next start. You can turn automatic checks off, or check by hand, in **Settings → Updates**.
+Yon checks GitHub Releases for a new version shortly after it starts and every few hours. When one is out, a bar at the bottom of the window says so: click **Update** and Yon downloads it, installs it over the old version and reopens. Files left behind by earlier updates are cleaned up on the next start. Updating from 0.2.0 (any OS), or from 0.2.1 on macOS, needs one extra step; see the [CHANGELOG](CHANGELOG.md). You can turn automatic checks off, or check by hand, in **Settings → Updates**.
 
 ### Phones (Yon Link)
 
