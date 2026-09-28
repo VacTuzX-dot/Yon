@@ -101,6 +101,42 @@ pub fn mark_downloaded(path: &Path) {
 #[cfg(not(windows))]
 pub fn mark_downloaded(_path: &Path) {}
 
+/// macOS: lift the quarantine from the app bundle this process runs from.
+///
+/// WHY: `LSFileQuarantineEnabled` quarantines every file Yon creates, and the
+/// in-app updater unpacks the new app inside this process — so the relaunched
+/// app was refused as "damaged". The update was already verified against the
+/// minisign key pinned in this build, so only our own bundle is released;
+/// received files stay quarantined.
+#[cfg(target_os = "macos")]
+pub fn unquarantine_own_bundle() -> io::Result<()> {
+    let exe = std::env::current_exe()?;
+    let app = bundle_of(&exe).ok_or_else(|| io::Error::other("not running from an .app bundle"))?;
+    clear_quarantine(app)
+}
+
+/// `.../Yon.app/Contents/MacOS/yon` -> `.../Yon.app`
+#[cfg(target_os = "macos")]
+fn bundle_of(exe: &Path) -> Option<&Path> {
+    exe.ancestors()
+        .nth(3)
+        .filter(|p| p.extension().is_some_and(|e| e == "app"))
+}
+
+#[cfg(target_os = "macos")]
+fn clear_quarantine(path: &Path) -> io::Result<()> {
+    // Exit 0 even when some files never had the attribute.
+    let status = std::process::Command::new("/usr/bin/xattr")
+        .args(["-d", "-r", "com.apple.quarantine"])
+        .arg(path)
+        .status()?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(io::Error::other(format!("xattr failed: {status}")))
+    }
+}
+
 /// Show `path` selected in Finder / Explorer. `path` must come from Rust
 /// state (a file we saved), never from the frontend.
 pub fn reveal(path: &Path) -> io::Result<()> {
@@ -189,6 +225,50 @@ mod tests {
         let n = default_device_name();
         assert!(!n.is_empty() && n.len() <= 63);
         assert!(!n.ends_with(".local"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn bundle_of_needs_an_app_bundle() {
+        let exe = Path::new("/Applications/Yon.app/Contents/MacOS/yon");
+        assert_eq!(bundle_of(exe), Some(Path::new("/Applications/Yon.app")));
+        assert_eq!(bundle_of(Path::new("/usr/local/bin/yon")), None);
+        assert_eq!(bundle_of(Path::new("target/debug/yon")), None);
+    }
+
+    // Regression: the updated app kept the quarantine Yon puts on every file
+    // it writes, and macOS refused to open it ("damaged").
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn clear_quarantine_removes_only_quarantine() {
+        use std::process::Command;
+        let dir = std::env::temp_dir().join(format!("yon-q-{}", std::process::id()));
+        let file = dir.join("Contents/MacOS/yon");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, b"x").unwrap();
+        let set = |name: &str| {
+            let ok = Command::new("/usr/bin/xattr")
+                .args(["-w", name, "0081;0;Yon;"])
+                .arg(&file)
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        set("com.apple.quarantine");
+        set("io.github.vactuzx-dot.yon.test");
+        let names = || {
+            let out = Command::new("/usr/bin/xattr").arg(&file).output().unwrap();
+            String::from_utf8(out.stdout).unwrap()
+        };
+        assert!(names().contains("com.apple.quarantine"));
+
+        clear_quarantine(&dir).unwrap();
+
+        assert!(!names().contains("com.apple.quarantine"));
+        assert!(names().contains("io.github.vactuzx-dot.yon.test"));
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(clear_quarantine(&dir).is_err());
     }
 
     #[test]

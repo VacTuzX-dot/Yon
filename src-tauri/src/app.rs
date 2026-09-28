@@ -1090,6 +1090,12 @@ pub async fn install_update(app: AppHandle, state: State<'_, AppState>) -> Resul
         .await;
     state.updating.store(false, Ordering::SeqCst);
     result.map_err(|e| format!("Update failed: {e}"))?;
+    // WHY: otherwise macOS refuses to open the relaunched app as "damaged";
+    // see platform::unquarantine_own_bundle.
+    #[cfg(target_os = "macos")]
+    if let Err(e) = crate::platform::unquarantine_own_bundle() {
+        eprintln!("[yon] could not clear quarantine on the updated app: {e}");
+    }
     // WHY: free the single-instance lock first, or the relaunched app can
     // find this (still exiting) process, hand over to it and quit.
     #[cfg(desktop)]
