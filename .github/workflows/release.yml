@@ -12,11 +12,14 @@ jobs:
   # tauri.conf.json still says 0.1.0) — otherwise installers get the wrong name.
   version:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.tag.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Tag matches app version
+        id: tag
         shell: bash
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -25,6 +28,7 @@ jobs:
           cargo=$(sed -n 's/^version = "\(.*\)"/\1/p' src-tauri/Cargo.toml | head -1)
           echo "tag=$tag tauri.conf=$conf package.json=$pkg Cargo.toml=$cargo"
           [ "$tag" = "$conf" ] && [ "$tag" = "$pkg" ] && [ "$tag" = "$cargo" ]
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
       - name: Updater public key is set
         shell: bash
         # A release without it could never update itself again.
@@ -88,8 +92,23 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: Yon ${{ github.ref_name }}
+          # WHY: direct links per platform so nobody has to guess between
+          # the .dmg, .exe, .tar.gz and .sig files in the asset list.
           releaseBody: |
-            Unsigned build. See the README for how to open it on macOS (right-click → Open) and Windows (SmartScreen → More info → Run anyway).
+            ## Download
+
+            | Your computer | File |
+            |---|---|
+            | **Mac with Apple Silicon** (M1, M2, M3, M4 or newer) | [Yon_${{ needs.version.outputs.version }}_aarch64.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Yon_${{ needs.version.outputs.version }}_aarch64.dmg) |
+            | **Windows 10 / 11, 64-bit** (x64, Intel or AMD) | [Yon_${{ needs.version.outputs.version }}_x64-setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Yon_${{ needs.version.outputs.version }}_x64-setup.exe) |
+
+            Not sure which one?
+            - **Mac:** Apple menu → About This Mac. "Chip: Apple M…" means Apple Silicon. Macs with an Intel processor aren't supported yet.
+            - **Windows:** Settings → System → About → System type. "64-bit operating system, x64-based processor" is the right one. 32-bit Windows (x86) isn't supported. On Windows on ARM the x64 installer runs through Windows' emulation (not tested).
+
+            **Mac without the "Open Anyway" step:** `curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash`
+
+            Unsigned build: see the [README](https://github.com/${{ github.repository }}#install) for the first-open steps. Changes and known problems: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
 
