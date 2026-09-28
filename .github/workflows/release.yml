@@ -121,8 +121,12 @@ jobs:
             Unsigned build: see the [README](https://github.com/${{ github.repository }}#install) for the first-open steps. Changes and known problems: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
+          # WHY: four parallel jobs each rewriting latest.json race and can
+          # drop platforms; the checksums job writes it once from the .sig files.
+          uploadUpdaterJson: false
 
-  # SHA256SUMS.txt computed from the exact files attached to the release.
+  # latest.json (updater manifest) and SHA256SUMS.txt, computed once from the
+  # exact files attached to the release, after every build has finished.
   checksums:
     needs: build
     runs-on: ubuntu-latest
@@ -133,16 +137,46 @@ jobs:
       REPO: ${{ github.repository }}
       RELEASE_ID: ${{ needs.build.outputs.release_id }}
     steps:
-      - name: Download assets, hash, upload SHA256SUMS.txt
+      - name: Download assets, write latest.json, hash, upload
         shell: bash
         run: |
           set -euo pipefail
           mkdir assets && cd assets
           gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate \
-            -q '.[] | select(.name != "SHA256SUMS.txt") | "\(.id) \(.name)"' |
+            -q '.[] | select(.name != "SHA256SUMS.txt" and .name != "latest.json") | "\(.id) \(.name)"' |
           while read -r id name; do
             gh api -H "Accept: application/octet-stream" "repos/$REPO/releases/assets/$id" > "$name"
           done
+
+          # One updater entry per platform, keyed the way tauri-plugin-updater
+          # looks them up ("<os>-<arch>-<installer>", then "<os>-<arch>").
+          platforms='{}'
+          for sig in *.sig; do
+            case "$sig" in
+              *_aarch64.app.tar.gz.sig | *_arm64.app.tar.gz.sig) keys="darwin-aarch64 darwin-aarch64-app" ;;
+              *_x64.app.tar.gz.sig | *_x86_64.app.tar.gz.sig) keys="darwin-x86_64 darwin-x86_64-app" ;;
+              *_x64-setup.exe.sig | *_x86_64-setup.exe.sig) keys="windows-x86_64 windows-x86_64-nsis" ;;
+              *_arm64-setup.exe.sig | *_aarch64-setup.exe.sig) keys="windows-aarch64 windows-aarch64-nsis" ;;
+              *) echo "::error::no updater platform for $sig"; exit 1 ;;
+            esac
+            url="https://github.com/$REPO/releases/download/$GITHUB_REF_NAME/${sig%.sig}"
+            for key in $keys; do
+              platforms=$(jq --arg k "$key" --arg s "$(cat "$sig")" --arg u "$url" \
+                '.[$k] = {signature: $s, url: $u}' <<<"$platforms")
+            done
+          done
+          for need in darwin-aarch64 darwin-x86_64 windows-x86_64 windows-aarch64; do
+            jq -e --arg k "$need" 'has($k)' <<<"$platforms" > /dev/null \
+              || { echo "::error::latest.json is missing $need"; exit 1; }
+          done
+          jq -n --arg v "${GITHUB_REF_NAME#v}" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg n "https://github.com/$REPO/releases/tag/$GITHUB_REF_NAME" \
+            --argjson p "$platforms" '{version: $v, notes: $n, pub_date: $d, platforms: $p}' > latest.json
+          cat latest.json
+          gh api --method POST -H "Content-Type: application/json" \
+            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=latest.json" \
+            --input latest.json > /dev/null
+
           sha256sum -- * > ../SHA256SUMS.txt
           cat ../SHA256SUMS.txt
           gh api --method POST -H "Content-Type: text/plain" \

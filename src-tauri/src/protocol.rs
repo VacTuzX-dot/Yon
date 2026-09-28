@@ -146,7 +146,10 @@ impl TransferRequest {
                 return Err(ProtoError::Invalid("file name too long"));
             }
             if let Some(dir) = &f.dir {
-                if dir.len() > MAX_RAW_FILE_NAME_BYTES || dir.split('/').count() > MAX_DIR_DEPTH {
+                // WHY: both separators — the receiver splits on either.
+                if dir.len() > MAX_RAW_FILE_NAME_BYTES
+                    || dir.split(['/', '\\']).count() > MAX_DIR_DEPTH
+                {
                     return Err(ProtoError::Invalid("folder path too long"));
                 }
             }
@@ -322,6 +325,9 @@ mod tests {
         let mut ok = file(1);
         ok.dir = Some(vec!["d"; MAX_DIR_DEPTH].join("/"));
         assert!(req(vec![ok]).validate().is_ok());
+        let mut backslashes = file(1);
+        backslashes.dir = Some(vec!["d"; MAX_DIR_DEPTH + 1].join("\\"));
+        assert!(req(vec![backslashes]).validate().is_err());
         let mut long = file(1);
         long.dir = Some("x".repeat(MAX_RAW_FILE_NAME_BYTES + 1));
         assert!(req(vec![long]).validate().is_err());

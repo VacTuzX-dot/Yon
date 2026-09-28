@@ -304,6 +304,7 @@ impl Receiver {
                         while matches!(rd.read(&mut sink).await, Ok(n) if n > 0) {}
                     })
                     .await;
+                    folders.remove_empty();
                     self.ui.finished(id, RecvOutcome::Cancelled { by_sender: false, saved });
                     return Ok(());
                 }
@@ -311,6 +312,7 @@ impl Receiver {
             match result {
                 Ok(path) => saved.push(path),
                 Err(RecvError::SenderGone) => {
+                    folders.remove_empty();
                     self.ui.finished(
                         id,
                         RecvOutcome::Cancelled {
@@ -321,6 +323,7 @@ impl Receiver {
                     return Ok(());
                 }
                 Err(RecvError::Failed(reason)) => {
+                    folders.remove_empty();
                     let _ = write_frame(
                         &mut wr,
                         &Frame::Failed {

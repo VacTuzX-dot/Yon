@@ -349,12 +349,26 @@ fn too_many() -> String {
 /// so a folder can't pull in files from elsewhere.
 fn collect_files(paths: Vec<PathBuf>) -> Result<Vec<OutFile>, String> {
     let mut out = Vec::new();
+    let mut roots = std::collections::HashSet::new();
     for path in paths {
         let Ok(meta) = std::fs::metadata(&path) else {
             continue;
         };
         if meta.is_dir() {
-            walk(&path, file_name(&path), 1, &mut out)?;
+            // WHY: two picked folders both called "Photos" stay apart on
+            // the other side instead of merging into one.
+            let name = file_name(&path);
+            let root = (1..)
+                .map(|n| {
+                    if n == 1 {
+                        name.clone()
+                    } else {
+                        format!("{name} ({n})")
+                    }
+                })
+                .find(|r| roots.insert(r.to_lowercase()))
+                .expect("unbounded");
+            walk(&path, root, 1, &mut out)?;
         } else if meta.is_file() {
             out.push(OutFile {
                 name: file_name(&path),
@@ -1627,7 +1641,11 @@ mod tests {
             std::os::unix::fs::symlink(outside.join("secret"), top.join("s")).unwrap();
         }
 
-        let files = collect_files(vec![top, root.join("loose.txt"), root.join("gone")]).unwrap();
+        let twin = root.join("other").join("Trip");
+        std::fs::create_dir_all(&twin).unwrap();
+        std::fs::write(twin.join("z.jpg"), b"z").unwrap();
+        let files =
+            collect_files(vec![top, root.join("loose.txt"), root.join("gone"), twin]).unwrap();
         let got: Vec<_> = files
             .iter()
             .map(|f| (f.dir.as_deref(), f.name.as_str(), f.size))
@@ -1639,6 +1657,7 @@ mod tests {
                 (Some("Trip"), "b.jpg", 2),
                 (Some("Trip/day 2"), "c.jpg", 3),
                 (None, "loose.txt", 1),
+                (Some("Trip (2)"), "z.jpg", 1),
             ]
         );
         std::fs::remove_dir_all(root).unwrap();

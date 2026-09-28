@@ -94,7 +94,13 @@ impl Drop for Reserved {
 #[derive(Default)]
 pub struct Folders {
     roots: HashMap<String, PathBuf>,
+    /// Every folder this transfer created, in creation order.
+    created: Vec<PathBuf>,
 }
+
+/// Folders one transfer may create: files are capped at 10,000, and without
+/// this each could sit in its own 32-deep chain.
+const MAX_FOLDERS: usize = 10_000;
 
 impl Folders {
     /// The folder for a file at `levels` (already sanitized) under `base`,
@@ -106,15 +112,20 @@ impl Folders {
         let mut dir = match self.roots.get(top) {
             Some(root) => root.clone(),
             None => {
+                self.room()?;
                 let root = claim_dir(base, top)?;
+                self.created.push(root.clone());
                 self.roots.insert(top.clone(), root.clone());
                 root
             }
         };
         for level in rest {
             dir.push(level);
+            if !dir.is_dir() {
+                self.room()?;
+            }
             match fs::create_dir(&dir) {
-                Ok(()) => {}
+                Ok(()) => self.created.push(dir.clone()),
                 // WHY: symlink_metadata, not metadata — only a real folder we
                 // made earlier in this transfer may be reused.
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
@@ -129,6 +140,22 @@ impl Folders {
             }
         }
         Ok(dir)
+    }
+
+    fn room(&self) -> io::Result<()> {
+        if self.created.len() >= MAX_FOLDERS {
+            return Err(io::Error::other("too many folders in one transfer"));
+        }
+        Ok(())
+    }
+
+    /// After a cancelled or failed transfer: remove the folders it created
+    /// that ended up empty. `remove_dir` only removes empty folders, so files
+    /// that did arrive (and anything else) stay.
+    pub fn remove_empty(&self) {
+        for dir in self.created.iter().rev() {
+            let _ = fs::remove_dir(dir);
+        }
     }
 }
 
@@ -360,6 +387,22 @@ mod tests {
         // A new transfer never reuses the old folder.
         let d = Folders::default().dir_for(&dir, &lv("Photos")).unwrap();
         assert_eq!(d, dir.join("Photos (2)"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn remove_empty_keeps_folders_with_files() {
+        let dir = temp_dir("folders-clean");
+        let mut f = Folders::default();
+        let lv = |p: &str| p.split('/').map(String::from).collect::<Vec<_>>();
+        let kept = f.dir_for(&dir, &lv("A/has")).unwrap();
+        fs::write(kept.join("x"), b"x").unwrap();
+        f.dir_for(&dir, &lv("A/empty/deeper")).unwrap();
+        f.dir_for(&dir, &lv("B")).unwrap();
+        f.remove_empty();
+        assert!(kept.join("x").exists());
+        assert!(!dir.join("A").join("empty").exists());
+        assert!(!dir.join("B").exists());
         fs::remove_dir_all(dir).unwrap();
     }
 
