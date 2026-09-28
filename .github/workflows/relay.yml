@@ -5,10 +5,11 @@ name: Relay
 # WebSocket round trips through the public hostname) and rolls back on failure.
 #
 # Needs, in the "production" environment (with required reviewers):
-#   secrets  SSH_PRIVATE_KEY, SSH_USER, HOST_IP (Tailscale IP or MagicDNS name),
-#            SSH_KNOWN_HOSTS (the server's host key line for HOST_IP),
-#            TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+#   secrets  SSH_PRIVATE_KEY, SSH_USER, HOST_IP (the Tailscale IP pinned in
+#            deploy/known_hosts), TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
 #   variable RELAY_HOST (e.g. relay.example.com — no scheme, no path)
+# The server's host key is public and pinned in deploy/known_hosts; SSH
+# refuses any other key (or any other HOST_IP) until a reviewed commit.
 on:
   push:
     tags: ['v*']
@@ -62,11 +63,10 @@ jobs:
       - name: SSH key and pinned host key
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
         run: |
           install -d -m 700 ~/.ssh
           printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
-          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cp deploy/known_hosts ~/.ssh/known_hosts
           chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
 
       - name: Upload release files

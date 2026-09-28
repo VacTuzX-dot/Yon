@@ -1,0 +1,5 @@
+# meox (Tailscale). Public host key, pinned: the relay deploy refuses any other.
+# Changing it needs a reviewed commit. Check on the server first:
+#   ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+#   SHA256:74vNgYCYrMlPHyHMCVPhFiGss59mgpQ9A1IhVK10hn4
+100.109.215.28 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC+F221xi1qLNtpJyqorfziqL82giM7Z2AR4KC09hK3t
