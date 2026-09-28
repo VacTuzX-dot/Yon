@@ -370,7 +370,6 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    #[cfg(unix)]
     #[test]
     fn folders_get_fresh_roots_and_reuse_them_within_a_transfer() {
         let dir = temp_dir("folders");
@@ -419,6 +418,7 @@ mod tests {
         fs::remove_dir_all(victim).unwrap();
     }
 
+    #[cfg(unix)]
     #[tokio::test]
     async fn planted_part_symlink_is_not_followed() {
         let dir = temp_dir("symlink");
