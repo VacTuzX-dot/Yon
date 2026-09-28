@@ -54,6 +54,14 @@ pub struct PairedPhone {
     pub name: String,
     /// Unix seconds.
     pub created: u64,
+    /// Relay this pairing was made for (normalized URL); empty = home
+    /// Wi-Fi only. Missing in files from before v0.2.2 → empty.
+    #[serde(default)]
+    pub relay: String,
+    /// Set only while this pairing is pending: id of the pairing it
+    /// replaces once it has proven its key.
+    #[serde(default)]
+    pub replaces: Option<String>,
 }
 
 const MAX_PHONES: usize = 20;
@@ -113,6 +121,9 @@ impl Settings {
                         && crate::protocol::unhex::<32>(&p.key).is_some()
                 });
                 s.phones.truncate(MAX_PHONES);
+                for p in &mut s.phones {
+                    p.relay = validate_relay_url(&p.relay).unwrap_or_default();
+                }
                 if crate::protocol::unhex::<32>(&s.room_secret).is_none() {
                     s.room_secret.clear();
                 }
@@ -237,6 +248,106 @@ pub fn validate_port(port: u16) -> Result<u16, &'static str> {
     Ok(port)
 }
 
+/// A pending pairing that never proved its key is dropped after this.
+pub const PENDING_TTL: u64 = 15 * 60;
+
+/// Pending and either too old, or stamped more than a minute in the
+/// future (the clock moved back) — never kept indefinitely.
+pub fn is_pending_expired(p: &PairedPhone, now: u64) -> bool {
+    p.replaces.is_some() && (now.saturating_sub(p.created) >= PENDING_TTL || p.created > now + 60)
+}
+
+impl Settings {
+    pub fn has_pending(&self) -> bool {
+        self.phones.iter().any(|p| p.replaces.is_some())
+    }
+}
+
+// WHY (complete / cancel / expire): the caller holds the settings lock,
+// these work on a clone, and the caller swaps the clone in only after
+// `save` succeeded — a failed save leaves memory and disk as they were,
+// so the old pairing keeps working.
+
+/// `new_id` proved its key: remove the pairing it replaces (fine if already
+/// gone), carry "Always accept" over, and clear `replaces`.
+/// `Ok(None)` = nothing to do (unknown, or not pending).
+pub fn complete_replacement(
+    s: &Settings,
+    new_id: &str,
+    save: impl FnOnce(&Settings) -> io::Result<()>,
+) -> io::Result<Option<Settings>> {
+    let Some(old_id) = s
+        .phones
+        .iter()
+        .find(|p| p.id == new_id)
+        .and_then(|p| p.replaces.clone())
+    else {
+        return Ok(None);
+    };
+    let mut next = s.clone();
+    next.phones.retain(|p| p.id != old_id);
+    let mut new_name = String::new();
+    if let Some(p) = next.phones.iter_mut().find(|p| p.id == new_id) {
+        p.replaces = None;
+        new_name = p.name.clone();
+    }
+    if let (Some(old), Some(new)) = (
+        crate::protocol::unhex::<16>(&old_id),
+        crate::protocol::unhex::<16>(new_id),
+    ) {
+        let old_fp = crate::link::phone_fingerprint(&old);
+        if next.is_trusted(&old_fp) {
+            next.untrust(&hex(&old_fp));
+            next.trust(&crate::link::phone_fingerprint(&new), &new_name);
+        }
+    }
+    save(&next)?;
+    Ok(Some(next))
+}
+
+pub enum CancelOutcome {
+    /// The pending pairing was removed; here are the saved settings.
+    Cancelled(Settings),
+    /// It had already proven its key: nothing removed.
+    Completed,
+    /// No such pairing (expired, or cancelled before).
+    NotFound,
+}
+
+/// The user closed the sheet before the phone connected. Only a pending
+/// record is ever removed; the pairing it would replace is untouched.
+pub fn cancel_pending(
+    s: &Settings,
+    new_id: &str,
+    save: impl FnOnce(&Settings) -> io::Result<()>,
+) -> io::Result<CancelOutcome> {
+    match s.phones.iter().find(|p| p.id == new_id) {
+        None => Ok(CancelOutcome::NotFound),
+        Some(p) if p.replaces.is_none() => Ok(CancelOutcome::Completed),
+        Some(_) => {
+            let mut next = s.clone();
+            next.phones.retain(|p| p.id != new_id);
+            save(&next)?;
+            Ok(CancelOutcome::Cancelled(next))
+        }
+    }
+}
+
+/// Drop pending pairings past `PENDING_TTL`. `Ok(None)` = none expired.
+pub fn expire_pending(
+    s: &Settings,
+    now: u64,
+    save: impl FnOnce(&Settings) -> io::Result<()>,
+) -> io::Result<Option<Settings>> {
+    if !s.phones.iter().any(|p| is_pending_expired(p, now)) {
+        return Ok(None);
+    }
+    let mut next = s.clone();
+    next.phones.retain(|p| !is_pending_expired(p, now));
+    save(&next)?;
+    Ok(Some(next))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -266,6 +377,8 @@ mod tests {
                 key: "cd".repeat(32),
                 name: "iPhone".into(),
                 created: 1,
+                relay: "wss://relay.example.com".into(),
+                replaces: None,
             }],
             trusted: vec![TrustedDevice {
                 id: "ab".repeat(32),
@@ -348,6 +461,194 @@ mod tests {
             "wss://relay.example.com"
         );
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn phone(id: u8, replaces: Option<u8>, created: u64) -> PairedPhone {
+        PairedPhone {
+            id: hex(&[id; 16]),
+            key: hex(&[id; 32]),
+            name: format!("p{id}"),
+            created,
+            relay: String::new(),
+            replaces: replaces.map(|r| hex(&[r; 16])),
+        }
+    }
+
+    fn with_phones(phones: Vec<PairedPhone>) -> Settings {
+        let mut s = Settings::defaults(Path::new("/d"));
+        s.phones = phones;
+        s
+    }
+
+    fn id(n: u8) -> String {
+        hex(&[n; 16])
+    }
+
+    /// Counts saves; `fail` makes every save return an error.
+    fn saver(
+        count: &std::cell::Cell<u32>,
+        fail: bool,
+    ) -> impl FnOnce(&Settings) -> io::Result<()> + '_ {
+        move |_| {
+            count.set(count.get() + 1);
+            if fail {
+                Err(io::Error::other("disk full"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[test]
+    fn replacement_completes_after_auth() {
+        let mut s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 20)]);
+        let old_fp = crate::link::phone_fingerprint(&[1; 16]);
+        s.trust(&old_fp, "p1");
+        let saves = std::cell::Cell::new(0);
+        let next = complete_replacement(&s, &id(2), saver(&saves, false))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.phones, vec![phone(2, None, 20)]);
+        assert_eq!(saves.get(), 1);
+        // "Always accept" moves to the new pairing.
+        assert!(!next.is_trusted(&old_fp));
+        assert!(next.is_trusted(&crate::link::phone_fingerprint(&[2; 16])));
+    }
+
+    #[test]
+    fn unrelated_phone_auth_is_noop() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 20)]);
+        let saves = std::cell::Cell::new(0);
+        assert_eq!(
+            complete_replacement(&s, &id(1), saver(&saves, false)).unwrap(),
+            None
+        );
+        assert_eq!(
+            complete_replacement(&s, &id(9), saver(&saves, false)).unwrap(),
+            None
+        );
+        assert_eq!(saves.get(), 0);
+    }
+
+    #[test]
+    fn duplicate_auth_is_idempotent() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 20)]);
+        let saves = std::cell::Cell::new(0);
+        let first = complete_replacement(&s, &id(2), saver(&saves, false))
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            complete_replacement(&first, &id(2), saver(&saves, false)).unwrap(),
+            None
+        );
+        assert_eq!(saves.get(), 1);
+    }
+
+    #[test]
+    fn save_failure_keeps_old() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 20)]);
+        let before = s.clone();
+        let saves = std::cell::Cell::new(0);
+        assert!(complete_replacement(&s, &id(2), saver(&saves, true)).is_err());
+        assert!(cancel_pending(&s, &id(2), saver(&saves, true)).is_err());
+        assert!(expire_pending(&s, 20 + PENDING_TTL, saver(&saves, true)).is_err());
+        assert_eq!(s, before);
+        assert_eq!(saves.get(), 3);
+    }
+
+    #[test]
+    fn cancel_after_complete_is_noop() {
+        let s = with_phones(vec![phone(2, None, 20)]);
+        let saves = std::cell::Cell::new(0);
+        assert!(matches!(
+            cancel_pending(&s, &id(2), saver(&saves, false)).unwrap(),
+            CancelOutcome::Completed
+        ));
+        assert!(matches!(
+            cancel_pending(&s, &id(9), saver(&saves, false)).unwrap(),
+            CancelOutcome::NotFound
+        ));
+        assert_eq!(saves.get(), 0);
+    }
+
+    #[test]
+    fn cancel_never_removes_old() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 20)]);
+        let saves = std::cell::Cell::new(0);
+        let CancelOutcome::Cancelled(next) =
+            cancel_pending(&s, &id(2), saver(&saves, false)).unwrap()
+        else {
+            panic!("expected Cancelled");
+        };
+        assert_eq!(next.phones, vec![phone(1, None, 10)]);
+        assert_eq!(saves.get(), 1);
+    }
+
+    #[test]
+    fn no_auth_then_expiry_keeps_old() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 100)]);
+        let saves = std::cell::Cell::new(0);
+        let next = expire_pending(&s, 100 + PENDING_TTL, saver(&saves, false))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.phones, vec![phone(1, None, 10)]);
+    }
+
+    #[test]
+    fn expiry_after_ttl_keeps_old() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 100)]);
+        let saves = std::cell::Cell::new(0);
+        assert_eq!(
+            expire_pending(&s, 100 + PENDING_TTL - 1, saver(&saves, false)).unwrap(),
+            None
+        );
+        assert_eq!(saves.get(), 0);
+        let next = expire_pending(&s, 100 + PENDING_TTL, saver(&saves, false))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.phones, vec![phone(1, None, 10)]);
+    }
+
+    #[test]
+    fn expiry_survives_restart() {
+        let dir = temp_dir("settings-pending");
+        let dl = Path::new("/d");
+        let mut s = Settings::defaults(dl);
+        s.phones = vec![phone(1, None, 10), phone(2, Some(1), 100)];
+        s.save(&dir).unwrap();
+        let loaded = Settings::load(&dir, dl);
+        assert!(loaded.has_pending());
+        let next = expire_pending(&loaded, 100 + PENDING_TTL + 5, |n| n.save(&dir))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.phones, vec![phone(1, None, 10)]);
+        assert!(!Settings::load(&dir, dl).has_pending());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn expiry_future_timestamp() {
+        let s = with_phones(vec![phone(1, None, 10), phone(2, Some(1), 1_000)]);
+        let saves = std::cell::Cell::new(0);
+        assert_eq!(
+            expire_pending(&s, 1_000 - 60, saver(&saves, false)).unwrap(),
+            None
+        );
+        let next = expire_pending(&s, 1_000 - 61, saver(&saves, false))
+            .unwrap()
+            .unwrap();
+        assert_eq!(next.phones, vec![phone(1, None, 10)]);
+    }
+
+    #[test]
+    fn expiry_ignores_completed() {
+        let s = with_phones(vec![phone(1, None, 0)]);
+        let saves = std::cell::Cell::new(0);
+        assert_eq!(
+            expire_pending(&s, 1_000_000, saver(&saves, false)).unwrap(),
+            None
+        );
+        assert_eq!(saves.get(), 0);
     }
 
     #[test]

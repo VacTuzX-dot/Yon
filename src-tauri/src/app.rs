@@ -947,6 +947,8 @@ pub async fn pair_phone(state: State<'_, AppState>, name: String) -> Result<Pair
             key: hex(&key),
             name: name.clone(),
             created,
+            relay: String::new(),
+            replaces: None,
         }) {
             return Err("Too many phones paired. Remove one first.".into());
         }
