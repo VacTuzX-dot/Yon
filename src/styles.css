@@ -5,7 +5,7 @@
   --bg: #f5f6f8;
   --surface: #ffffff;
   --ink: #1e222b;
-  --muted: #8a90a0;
+  --muted: #676d7c; /* ≥4.5:1 on --surface and --bg (WCAG AA) */
   --line: #e3e6eb;
   --accent: #e8a317; /* marigold (ดาวเรือง) */
   --accent-ink: #1e222b;
@@ -245,6 +245,127 @@ button.avatar:disabled:has(.ring) {
 
 .device-status.bad {
   color: var(--bad);
+}
+
+/* ---------- device icons ---------- */
+
+.device-icon {
+  width: 40px;
+  height: 40px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.avatar.small .device-icon {
+  width: 22px;
+  height: 22px;
+  stroke-width: 1.7;
+}
+
+/* ---------- many devices: searchable list ---------- */
+
+.device-list {
+  width: min(520px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.device-search {
+  width: 100%;
+  min-height: 40px;
+  margin-bottom: 6px;
+}
+
+.group-label {
+  margin: 14px 4px 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.device-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.device-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+}
+
+.device-row + .device-row {
+  border-top: 1px solid var(--line);
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.row-main:hover:not(:disabled) {
+  background: var(--avatar);
+}
+
+.row-main:disabled {
+  cursor: default;
+}
+
+.row-main:disabled:not(:has(.ring)) .row-text {
+  opacity: 0.6;
+}
+
+.row-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row-status {
+  font-size: 13px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.row-status.ok {
+  color: var(--ok);
+}
+
+.row-status.bad {
+  color: var(--bad);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+.waiting .device-name {
+  color: var(--muted);
 }
 
 /* ---------- progress ring ---------- */

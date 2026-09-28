@@ -45,6 +45,8 @@ const NOTE_MS = 5000;
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
+  /** Device id → when files were last sent to it; orders the picker. Not saved. */
+  const [recent, setRecent] = useState<Record<string, number>>({});
   const [fatal, setFatal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ device: Device; selection: Selection } | null>(null);
@@ -129,6 +131,7 @@ export default function App() {
   const sendTo = useCallback(async (device: Device, selection: Selection) => {
     try {
       const id = await api.send(selection.id, device.id);
+      setRecent((r) => ({ ...r, [device.id]: Date.now() }));
       setOutgoing((m) => {
         // One note per device: drop the previous one for this device.
         const rest = Object.fromEntries(
@@ -202,6 +205,7 @@ export default function App() {
         <DeviceOrbit
           devices={devices}
           activity={activity}
+          recent={recent}
           onPick={pickFor}
           onCancel={cancelFor}
           error={state.discovery_error}
@@ -265,6 +269,7 @@ export default function App() {
         <SharePicker
           selection={shared}
           devices={devices}
+          recent={recent}
           onPick={(device) => {
             setShared(null);
             sendTo(device, shared);
