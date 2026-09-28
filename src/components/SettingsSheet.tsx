@@ -2,6 +2,9 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, errorText, isMac, type AppState, type RemoteStatus, type Update } from "../api";
 import PairPhoneSheet from "./PairPhoneSheet";
 
+/** "wss://relay.example.com" → "relay.example.com" */
+const hostOf = (url: string) => url.replace(/^wss?:\/\//, "");
+
 interface Props {
   state: AppState;
   onChange: (s: AppState) => void;
@@ -14,7 +17,8 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
   const [name, setName] = useState(state.settings.device_name);
   const [port, setPort] = useState(String(state.settings.port));
   const [error, setError] = useState<string | null>(null);
-  const [pairing, setPairing] = useState(false);
+  const [pairing, setPairing] = useState<{ replace?: { id: string; name: string } } | null>(null);
+  const [relayError, setRelayError] = useState<string | null>(null);
   const [checking, setChecking] = useState<"idle" | "busy" | "latest">("idle");
   const [relayUrl, setRelayUrl] = useState(state.settings.relay_url);
   useEffect(() => ref.current?.showModal(), []);
@@ -73,10 +77,24 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
   async function setRemote(enabled: boolean) {
     setError(null);
     try {
-      const settings = await api.setRemote(enabled, relayUrl);
+      const settings = await api.setRemote(enabled, state.settings.relay_url);
       onChange({ ...state, settings });
     } catch (err) {
       setError(errorText(err));
+    }
+  }
+
+  // Saved when the field loses focus; a bad address keeps the old one.
+  async function saveRelay() {
+    if (relayUrl.trim() === state.settings.relay_url) return;
+    setRelayError(null);
+    try {
+      const settings = await api.setRemote(state.settings.remote, relayUrl);
+      setRelayUrl(settings.relay_url);
+      onChange({ ...state, settings });
+    } catch (err) {
+      setRelayError(errorText(err));
+      setRelayUrl(state.settings.relay_url);
     }
   }
 
@@ -191,18 +209,35 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
         </div>
         <div className="field">
           <span>Phones</span>
-          {state.settings.phones.length === 0 ? (
+          {state.settings.phones.every((p) => p.pending) ? (
             <p className="hint">Send photos from your phone to this computer. No app needed.</p>
           ) : (
             <ul className="trusted">
-              {state.settings.phones.map((p) => (
-                <li key={p.id}>
-                  <span className="file-name">{p.name}</span>
-                  <button type="button" className="link" onClick={() => unpair(p.id)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
+              {state.settings.phones
+                .filter((p) => !p.pending)
+                .map((p) => (
+                  <li key={p.id}>
+                    <span className="file-name">
+                      {p.name}
+                      {p.note === "home_only" && <span className="hint"> Home Wi-Fi only</span>}
+                      {p.note === "needs_remote" && (
+                        <span className="hint"> Needs Reach from anywhere</span>
+                      )}
+                    </span>
+                    {p.note === "home_only" && (
+                      <button
+                        type="button"
+                        className="link"
+                        onClick={() => setPairing({ replace: { id: p.id, name: p.name } })}
+                      >
+                        Pair again
+                      </button>
+                    )}
+                    <button type="button" className="link" onClick={() => unpair(p.id)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
             </ul>
           )}
           {state.settings.link_error && <p className="hint bad">{state.settings.link_error}</p>}
@@ -210,26 +245,20 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
             <input
               type="checkbox"
               checked={state.settings.remote}
+              disabled={!state.settings.remote && !state.settings.effective_relay}
               onChange={(e) => setRemote(e.target.checked)}
             />
             <span>
               Reach from anywhere
               <span className="hint">
-                Phones can send and receive away from this Wi-Fi, through a relay that only
-                passes on encrypted data.
+                {state.settings.effective_relay
+                  ? `Through ${hostOf(state.settings.effective_relay)}. It passes on encrypted data only; it can see internet addresses, when devices connect and how much they send.`
+                  : "Add a relay address under Advanced to turn this on."}
               </span>
             </span>
           </label>
-          <input
-            aria-label="Relay address"
-            placeholder="wss://relay.example.com"
-            value={relayUrl}
-            spellCheck={false}
-            onChange={(e) => setRelayUrl(e.target.value)}
-            onBlur={() => relayUrl !== state.settings.relay_url && setRemote(state.settings.remote)}
-          />
           {state.settings.remote && <RemoteLine status={state.settings.remote_status} />}
-          <button type="button" className="quiet pair-button" onClick={() => setPairing(true)}>
+          <button type="button" className="quiet pair-button" onClick={() => setPairing({})}>
             Pair a phone
           </button>
         </div>
@@ -273,6 +302,26 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
             Now listening on port {state.me.port}
             {state.me.port_fallback ? ` (${state.settings.port} was in use)` : ""}.
           </p>
+          <label className="field">
+            <span>Relay address</span>
+            <input
+              placeholder={
+                state.settings.default_relay
+                  ? hostOf(state.settings.default_relay)
+                  : "wss://relay.example.com"
+              }
+              value={relayUrl}
+              spellCheck={false}
+              onChange={(e) => setRelayUrl(e.target.value)}
+              onBlur={saveRelay}
+            />
+          </label>
+          <p className={relayError ? "hint bad" : "hint"}>
+            {relayError ??
+              (state.settings.default_relay
+                ? "Leave empty to use the built-in relay."
+                : "Required to turn on Reach from anywhere.")}
+          </p>
         </details>
         <p className="hint">
           Your device code is <span className="code">{state.me.short_fingerprint}</span>. People
@@ -291,8 +340,10 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
       {pairing && (
         <PairPhoneSheet
           online={state.online_phones}
+          phones={state.settings.phones}
+          replace={pairing.replace}
           onPaired={(settings) => onChange({ ...state, settings })}
-          onClose={() => setPairing(false)}
+          onClose={() => setPairing(null)}
         />
       )}
     </dialog>
