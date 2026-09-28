@@ -490,6 +490,16 @@ button.avatar:disabled:has(.ring) {
   box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.35);
 }
 
+/* WHY: scrolling a sheet must not scroll the app behind it — stop the
+   scroll at the sheet's edge, and lock the page while any dialog is open. */
+.sheet {
+  overscroll-behavior: contain;
+}
+
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+
 .sheet::backdrop {
   background: rgb(20 22 28 / 0.35);
 }
@@ -519,6 +529,19 @@ button.avatar:disabled:has(.ring) {
 
 .sheet form .actions {
   margin-top: 4px;
+}
+
+/* WHY: long sheets (Settings) scroll; the buttons stay reachable at the
+   bottom instead of below the fold. Negative offsets undo the sheet's 24px
+   padding so the bar spans edge to edge and hides content scrolling under. */
+.sheet .actions {
+  position: sticky;
+  bottom: -24px;
+  z-index: 1;
+  margin: 18px -24px -24px;
+  padding: 12px 24px 24px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
 }
 
 .sender {
