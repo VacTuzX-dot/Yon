@@ -128,6 +128,7 @@ fn make_file(dir: &Path, name: &str, data: &[u8]) -> OutFile {
         path,
         name: name.to_string(),
         size: data.len() as u64,
+        dir: None,
     }
 }
 
@@ -205,6 +206,57 @@ async fn accept_saves_sanitized_unique_files() {
         "dialog shows the real sender key"
     );
     assert!(req.files[1].renamed && req.files[1].name == "evil.txt");
+}
+
+#[tokio::test]
+async fn folders_arrive_as_new_folders_and_stay_inside() {
+    let mut env = setup("folders", Mode::Accept, Limits::default()).await;
+    std::fs::create_dir_all(env.recv_dir.join("Photos")).unwrap();
+    let in_dir = |name: &str, data: &[u8], dir: &str| OutFile {
+        dir: Some(dir.into()),
+        ..make_file(&env.src_dir, &format!("{dir}-{name}"), data)
+    };
+    let mut files = vec![
+        in_dir("a.jpg", b"one", "Photos"),
+        in_dir("b.jpg", b"two", "Photos/2024"),
+        in_dir("x.txt", b"up", "../../escape"),
+        make_file(&env.src_dir, "loose.txt", b"flat"),
+    ];
+    for (f, name) in files
+        .iter_mut()
+        .zip(["a.jpg", "b.jpg", "x.txt", "loose.txt"])
+    {
+        f.name = name.into();
+    }
+    let out = send(&env, &files, Arc::new(Notify::new())).await;
+    assert_eq!(out, SendOutcome::Completed);
+    assert!(matches!(next(&mut env).await, RecvOutcome::Completed { saved } if saved.len() == 4));
+
+    // The existing Photos folder is left alone; the new one gets " (1)".
+    assert_eq!(
+        listing(&env.recv_dir),
+        vec!["Photos", "Photos (1)", "escape", "loose.txt"]
+    );
+    assert!(listing(&env.recv_dir.join("Photos")).is_empty());
+    let photos = env.recv_dir.join("Photos (1)");
+    assert_eq!(std::fs::read(photos.join("a.jpg")).unwrap(), b"one");
+    assert_eq!(
+        std::fs::read(photos.join("2024").join("b.jpg")).unwrap(),
+        b"two"
+    );
+    assert_eq!(
+        std::fs::read(env.recv_dir.join("escape").join("x.txt")).unwrap(),
+        b"up"
+    );
+    assert!(
+        !env.root.join("escape").exists(),
+        "folder escaped the save dir"
+    );
+
+    let req = env.ui.last_request.lock().unwrap().clone().unwrap();
+    assert_eq!(req.files[1].dir, ["Photos", "2024"]);
+    assert!(!req.files[1].renamed);
+    assert!(req.files[2].renamed, "a cleaned folder path is flagged");
 }
 
 #[tokio::test]
@@ -412,6 +464,7 @@ async fn raw_send(env: &Env, declared: u64, body: &[u8], sha: &str) -> Frame {
     let files = vec![FileMeta {
         name: "x.bin".into(),
         size: declared,
+        dir: None,
     }];
     let req = TransferRequest {
         name: "evil".into(),
@@ -472,6 +525,7 @@ async fn one_gigabyte() {
         path: src.clone(),
         name: "1gb.bin".into(),
         size: 1 << 30,
+        dir: None,
     }];
 
     let started = std::time::Instant::now();

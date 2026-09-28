@@ -567,6 +567,7 @@ fn out_file(dir: &Path, name: &str, data: &[u8]) -> OutFile {
         path,
         name: name.into(),
         size: data.len() as u64,
+        dir: None,
     }
 }
 

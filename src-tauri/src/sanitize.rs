@@ -56,6 +56,16 @@ pub fn sanitize_file_name(raw: &str) -> String {
     name
 }
 
+/// Turn an untrusted `/`- or `\\`-separated folder path into safe folder
+/// names, one per level. Empty, `.` and `..` levels are dropped, so the
+/// result can only point further down, never up or out.
+pub fn sanitize_dir(raw: &str) -> Vec<String> {
+    raw.split(['/', '\\'])
+        .filter(|part| !matches!(part.trim(), "" | "." | ".."))
+        .map(sanitize_file_name)
+        .collect()
+}
+
 /// Characters that change how text *looks* without being visible: bidi
 /// controls can make `invoice\u{202E}fdp.exe` render as "invoiceexe.pdf".
 /// ZWJ/ZWNJ (U+200C/D) are kept — emoji sequences and several scripts need
@@ -238,5 +248,22 @@ mod tests {
         assert_eq!(c("Leo\u{200B}'s\u{202E} Mac\n", 63), "Leo's Mac");
         assert_eq!(c("\u{3164}\u{3164}", 63), "");
         assert_eq!(c("  กขค  ", 4), "ก");
+    }
+
+    #[test]
+    fn dir_levels_can_only_go_down() {
+        use super::sanitize_dir;
+        assert_eq!(sanitize_dir("Photos/2024"), ["Photos", "2024"]);
+        assert_eq!(sanitize_dir("../../etc/./x"), ["etc", "x"]);
+        assert_eq!(sanitize_dir("/abs\\win\\..\\p"), ["abs", "win", "p"]);
+        assert_eq!(sanitize_dir("C:/Users"), ["C_", "Users"]);
+        assert!(sanitize_dir("").is_empty());
+        // No level may be "..", even after invisible characters are removed.
+        for level in sanitize_dir("\u{200B}../. ./.. ./CON") {
+            assert!(
+                level != ".." && level != "." && !level.is_empty(),
+                "{level}"
+            );
+        }
     }
 }

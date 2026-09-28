@@ -94,6 +94,8 @@ export interface AppState {
 export interface FileInfo {
   name: string;
   size: number;
+  /** Folder inside what was picked ("Photos/2024"); null for a loose file. */
+  dir: string | null;
 }
 
 export interface Selection {
@@ -107,7 +109,7 @@ export interface Incoming {
   sender_name: string;
   sender_os: string;
   short_fingerprint: string;
-  files: (FileInfo & { renamed: boolean })[];
+  files: { name: string; size: number; renamed: boolean; dir: string[] }[];
   total: number;
 }
 
@@ -150,6 +152,9 @@ export type SendOutcome =
 export const api = {
   getState: () => invoke<AppState>("get_state"),
   pickFiles: () => invoke<Selection | null>("pick_files"),
+  pickFolders: () => invoke<Selection | null>("pick_folders"),
+  addToSelection: (id: number, folders: boolean) =>
+    invoke<Selection | null>("add_to_selection", { id, folders }),
   clearSelection: (id: number) => invoke<void>("clear_selection", { id }),
   send: (selectionId: number, deviceId: string) =>
     invoke<number>("send", { selectionId, deviceId }),
@@ -192,9 +197,11 @@ export interface Events {
   "remote-status": RemoteStatus;
   "settings-changed": Settings;
   /** Files dragged over the window (CSS px); null when the drag leaves. */
-  "drop-hover": { x: number; y: number; files: number | null } | null;
+  "drop-hover": { x: number; y: number; files: number | null; folders: number | null } | null;
   /** Files dropped on the window; paths stay in Rust. */
   dropped: { selection: Selection; x: number; y: number };
+  /** Dropped or shared files couldn't be used (empty folder, too many files…). */
+  "selection-error": string;
 }
 
 export function on<K extends keyof Events>(

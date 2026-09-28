@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import { formatBytes, type Device, type Selection } from "../api";
+import { fileRows, plural } from "../files";
 import { group, kindOf, labels } from "../devices";
 import { DeviceIcon } from "./DeviceOrbit";
 
@@ -17,6 +18,7 @@ export default function SharePicker({ selection, devices, recent, onPick, onClos
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => ref.current?.showModal(), []);
   const n = selection.files.length;
+  const rows = fileRows(selection.files);
   const usable = devices.filter((d) => d.compatible);
   const names = labels(usable);
   const { ready, waiting } = group(usable, recent);
@@ -32,7 +34,7 @@ export default function SharePicker({ selection, devices, recent, onPick, onClos
       }}
     >
       <h2 id="share-title">
-        Send {n === 1 ? selection.files[0].name : `${n} files`}
+        Send {rows.length === 1 && rows[0].count === n ? rows[0].name : plural(n, "file")}
       </h2>
       <p className="summary">{formatBytes(selection.total)}</p>
       {usable.length === 0 ? (

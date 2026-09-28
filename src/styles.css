@@ -641,6 +641,12 @@ body:has(dialog[open]) {
   border-bottom: 1px solid var(--line);
 }
 
+.add-more {
+  display: flex;
+  gap: 16px;
+  padding-top: 8px;
+}
+
 .file-name {
   flex: 1;
   overflow-wrap: anywhere;

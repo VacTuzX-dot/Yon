@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
+import { plural } from "../files";
 
 interface Props {
-  /** Files are over the window; how many are files (folders don't count). */
-  dragging: { files: number } | null;
+  /** Files and folders are over the window. */
+  dragging: { files: number; folders: number } | null;
   children: ReactNode;
 }
 
@@ -11,12 +12,15 @@ interface Props {
  *  the count. The device under the pointer is highlighted by DeviceOrbit. */
 export default function DropZone({ dragging, children }: Props) {
   const on = dragging !== null;
-  const label =
-    dragging === null
-      ? ""
-      : dragging.files === 0
-        ? "Folders can't be sent yet"
-        : `Drop ${dragging.files === 1 ? "1 file" : `${dragging.files} files`} on a device`;
+  const what = dragging
+    ? [
+        dragging.folders > 0 && plural(dragging.folders, "folder"),
+        dragging.files > 0 && plural(dragging.files, "file"),
+      ]
+        .filter(Boolean)
+        .join(" and ")
+    : "";
+  const label = dragging === null ? "" : `Drop ${what || "here"} on a device`;
 
   return (
     <div
@@ -34,7 +38,7 @@ export default function DropZone({ dragging, children }: Props) {
         className={[
           "pointer-events-none absolute -top-4 left-1/2 flex -translate-x-1/2 items-center gap-2",
           "rounded-full border border-accent bg-surface px-4 py-1.5 text-sm font-semibold whitespace-nowrap",
-          dragging?.files === 0 ? "text-bad" : "text-ink",
+          "text-ink",
           "transition-[opacity,transform] duration-200 ease-snappy",
           on ? "opacity-100" : "opacity-0 motion-safe:translate-y-1",
         ].join(" ")}

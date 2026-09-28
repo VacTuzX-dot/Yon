@@ -68,7 +68,11 @@ export default function App() {
   /** Phone the user asked to remove; asks before unpairing. */
   const [removing, setRemoving] = useState<Device | null>(null);
   /** Files are being dragged over the window; the device id under them, if any. */
-  const [dragging, setDragging] = useState<{ over: string | null; files: number } | null>(null);
+  const [dragging, setDragging] = useState<{
+    over: string | null;
+    files: number;
+    folders: number;
+  } | null>(null);
   // Listeners are set up once; they read the latest device list from here.
   const devicesRef = useRef<Device[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -115,7 +119,10 @@ export default function App() {
           if (!at) return null;
           const over = deviceAt(at.x, at.y)?.id ?? null;
           const files = at.files ?? prev?.files ?? 0;
-          return prev && prev.over === over && prev.files === files ? prev : { over, files };
+          const folders = at.folders ?? prev?.folders ?? 0;
+          return prev && prev.over === over && prev.files === files && prev.folders === folders
+            ? prev
+            : { over, files, folders };
         }),
       ),
       // WHY: a drop is a deliberate gesture, but the send still goes through
@@ -125,6 +132,10 @@ export default function App() {
         const device = deviceAt(x, y);
         if (device?.compatible) setConfirm({ device, selection });
         else setShared(selection);
+      }),
+      on("selection-error", (message) => {
+        setDragging(null);
+        setError(message);
       }),
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
       on("phones-online", (online_phones) => setState((s) => (s ? { ...s, online_phones } : s))),
@@ -170,10 +181,10 @@ export default function App() {
     };
   }, []);
 
-  const pickFor = useCallback(async (device: Device) => {
+  const pickFor = useCallback(async (device: Device, folders = false) => {
     setError(null);
     try {
-      const selection = await api.pickFiles();
+      const selection = await (folders ? api.pickFolders() : api.pickFiles());
       if (selection) setConfirm({ device, selection });
     } catch (e) {
       setError(errorText(e));
@@ -252,11 +263,15 @@ export default function App() {
   const trusted = new Set(state.settings.trusted.map((t) => t.id));
   /** What the "⋯" menu offers: only actions that exist for that device. */
   const menuFor = (d: Device): MenuItem[] => {
+    const folder: MenuItem[] = d.compatible
+      ? [{ label: "Send a folder…", onSelect: () => void pickFor(d, true) }]
+      : [];
     if (d.os === "phone") {
-      return [{ label: "Remove phone…", danger: true, onSelect: () => setRemoving(d) }];
+      return [...folder, { label: "Remove phone…", danger: true, onSelect: () => setRemoving(d) }];
     }
     if (trusted.has(d.id)) {
       return [
+        ...folder,
         {
           label: "Stop accepting automatically",
           onSelect: () =>
@@ -267,7 +282,7 @@ export default function App() {
         },
       ];
     }
-    return [];
+    return folder;
   };
   const cancelFor = (d: Device) => {
     const entry = Object.entries(outgoing).find(([, o]) => o.deviceId === d.id && !o.result);
@@ -406,6 +421,14 @@ export default function App() {
           device={confirm.device}
           selection={confirm.selection}
           onSend={send}
+          onAdd={(folders) =>
+            api
+              .addToSelection(confirm.selection.id, folders)
+              .then((selection) => {
+                if (selection) setConfirm((c) => (c ? { ...c, selection } : c));
+              })
+              .catch((e) => setError(errorText(e)))
+          }
           onClose={closeConfirm}
         />
       )}

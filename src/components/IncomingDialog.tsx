@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { formatBytes, type Incoming } from "../api";
+import { fileRows, plural } from "../files";
 import { initials } from "./DeviceOrbit";
 
 interface Props {
@@ -31,14 +32,17 @@ export default function IncomingDialog({ request, onAnswer }: Props) {
         <div>
           <h2 id="incoming-title">{request.sender_name}</h2>
           <p className="hint">
-            wants to send you {n} {n === 1 ? "file" : "files"}, {formatBytes(request.total)}
+            wants to send you {plural(n, "file")}, {formatBytes(request.total)}
           </p>
         </div>
       </div>
       <ul className="files">
-        {request.files.map((f, i) => (
+        {fileRows(request.files).map((f, i) => (
           <li key={i}>
-            <span className="file-name">{f.name}</span>
+            <span className="file-name">
+              {f.folder ? `${f.name}/` : f.name}
+              {f.folder && <span className="hint"> {plural(f.count, "file")}</span>}
+            </span>
             {f.renamed && (
               <span className="tag" title="Renamed so it's safe to save on this device">
                 renamed

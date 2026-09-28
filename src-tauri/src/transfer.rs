@@ -2,6 +2,7 @@
 //! race-free no-overwrite naming, and cleanup that survives cancellation.
 
 use ring::digest::{Context, SHA256};
+use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io;
 use std::path::{Path, PathBuf};
@@ -84,6 +85,71 @@ impl Drop for Reserved {
             let _ = fs::remove_file(&self.final_path);
         }
     }
+}
+
+/// Folders created for one incoming transfer. Each top-level folder gets a
+/// fresh name in the save folder (`Photos`, else `Photos (1)`…), so a
+/// transfer never writes into a folder that was already there, and nothing
+/// below it can be a planted symlink.
+#[derive(Default)]
+pub struct Folders {
+    roots: HashMap<String, PathBuf>,
+}
+
+impl Folders {
+    /// The folder for a file at `levels` (already sanitized) under `base`,
+    /// created on first use.
+    pub fn dir_for(&mut self, base: &Path, levels: &[String]) -> io::Result<PathBuf> {
+        let Some((top, rest)) = levels.split_first() else {
+            return Ok(base.to_path_buf());
+        };
+        let mut dir = match self.roots.get(top) {
+            Some(root) => root.clone(),
+            None => {
+                let root = claim_dir(base, top)?;
+                self.roots.insert(top.clone(), root.clone());
+                root
+            }
+        };
+        for level in rest {
+            dir.push(level);
+            match fs::create_dir(&dir) {
+                Ok(()) => {}
+                // WHY: symlink_metadata, not metadata — only a real folder we
+                // made earlier in this transfer may be reused.
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+                    if !fs::symlink_metadata(&dir)?.is_dir() {
+                        return Err(io::Error::new(
+                            io::ErrorKind::AlreadyExists,
+                            format!("\"{level}\" is both a file and a folder"),
+                        ));
+                    }
+                }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(dir)
+    }
+}
+
+/// Create a new folder `name` in `parent`, adding ` (1)`, ` (2)`… if taken.
+fn claim_dir(parent: &Path, name: &str) -> io::Result<PathBuf> {
+    for n in 0..MAX_SUFFIX {
+        let dir = parent.join(if n == 0 {
+            name.to_string()
+        } else {
+            format!("{name} ({n})")
+        });
+        match fs::create_dir(&dir) {
+            Ok(()) => return Ok(dir),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(
+        io::ErrorKind::AlreadyExists,
+        format!("no free folder name for \"{name}\" (too many copies)"),
+    ))
 }
 
 fn with_suffix(name: &str, n: u32) -> String {
@@ -278,6 +344,38 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[test]
+    fn folders_get_fresh_roots_and_reuse_them_within_a_transfer() {
+        let dir = temp_dir("folders");
+        fs::create_dir(dir.join("Photos")).unwrap();
+        let mut f = Folders::default();
+        let lv = |p: &str| p.split('/').map(String::from).collect::<Vec<_>>();
+        let a = f.dir_for(&dir, &lv("Photos/2024")).unwrap();
+        let b = f.dir_for(&dir, &lv("Photos/2024")).unwrap();
+        let c = f.dir_for(&dir, &lv("Photos")).unwrap();
+        assert_eq!(a, dir.join("Photos (1)").join("2024"));
+        assert_eq!(a, b);
+        assert_eq!(c, dir.join("Photos (1)"));
+        assert_eq!(f.dir_for(&dir, &[]).unwrap(), dir);
+        // A new transfer never reuses the old folder.
+        let d = Folders::default().dir_for(&dir, &lv("Photos")).unwrap();
+        assert_eq!(d, dir.join("Photos (2)"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folders_refuse_a_symlink_level() {
+        let dir = temp_dir("folders-link");
+        let victim = temp_dir("folders-victim");
+        let mut f = Folders::default();
+        let root = f.dir_for(&dir, &["P".into()]).unwrap();
+        std::os::unix::fs::symlink(&victim, root.join("x")).unwrap();
+        assert!(f.dir_for(&dir, &["P".into(), "x".into()]).is_err());
+        fs::remove_dir_all(dir).unwrap();
+        fs::remove_dir_all(victim).unwrap();
+    }
+
     #[tokio::test]
     async fn planted_part_symlink_is_not_followed() {
         let dir = temp_dir("symlink");

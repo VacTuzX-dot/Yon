@@ -25,6 +25,7 @@ pub const MAX_FILES: usize = 10_000;
 pub const MAX_DEVICE_NAME_BYTES: usize = 63;
 const MAX_RAW_FILE_NAME_BYTES: usize = 1024;
 const MAX_OS_BYTES: usize = 16;
+pub const MAX_DIR_DEPTH: usize = 32;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "t", rename_all = "snake_case")]
@@ -62,6 +63,11 @@ pub struct TransferRequest {
 pub struct FileMeta {
     pub name: String,
     pub size: u64,
+    /// Folder the file sits in, relative to what was sent, `/`-separated
+    /// ("Photos/2024"). Absent for loose files. Older receivers ignore it and
+    /// save everything flat.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dir: Option<String>,
 }
 
 #[derive(Debug)]
@@ -139,6 +145,11 @@ impl TransferRequest {
             if f.name.len() > MAX_RAW_FILE_NAME_BYTES {
                 return Err(ProtoError::Invalid("file name too long"));
             }
+            if let Some(dir) = &f.dir {
+                if dir.len() > MAX_RAW_FILE_NAME_BYTES || dir.split('/').count() > MAX_DIR_DEPTH {
+                    return Err(ProtoError::Invalid("folder path too long"));
+                }
+            }
             total = total
                 .checked_add(f.size)
                 .ok_or(ProtoError::Invalid("total size overflow"))?;
@@ -187,6 +198,7 @@ mod tests {
         FileMeta {
             name: "a.txt".into(),
             size,
+            dir: None,
         }
     }
 
@@ -288,6 +300,31 @@ mod tests {
         let mut long_file = req(vec![file(1)]);
         long_file.files[0].name = "x".repeat(2000);
         assert!(long_file.validate().is_err());
+    }
+
+    #[test]
+    fn folder_path_is_optional_on_the_wire() {
+        // A 0.2.2 sender sends no "dir"; a 0.2.2 receiver ignores it.
+        let old: FileMeta = serde_json::from_str(r#"{"name":"a.txt","size":1}"#).unwrap();
+        assert_eq!(old.dir, None);
+        assert!(!serde_json::to_string(&file(1)).unwrap().contains("dir"));
+        let mut f = file(1);
+        f.dir = Some("Photos/2024".into());
+        let back: FileMeta = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(back, f);
+    }
+
+    #[test]
+    fn validate_rejects_deep_or_long_folders() {
+        let mut deep = file(1);
+        deep.dir = Some(vec!["d"; MAX_DIR_DEPTH + 1].join("/"));
+        assert!(req(vec![deep]).validate().is_err());
+        let mut ok = file(1);
+        ok.dir = Some(vec!["d"; MAX_DIR_DEPTH].join("/"));
+        assert!(req(vec![ok]).validate().is_ok());
+        let mut long = file(1);
+        long.dir = Some("x".repeat(MAX_RAW_FILE_NAME_BYTES + 1));
+        assert!(req(vec![long]).validate().is_err());
     }
 
     #[test]

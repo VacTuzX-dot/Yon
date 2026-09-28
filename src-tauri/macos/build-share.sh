@@ -21,8 +21,15 @@ cp "$src/Info.plist" "$out/Contents/Info.plist"
 plutil -replace CFBundleShortVersionString -string "$version" "$out/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$version" "$out/Contents/Info.plist"
 
+# Same CPU as the app being bundled (Tauri passes the Rust target triple).
+case "${TAURI_ENV_TARGET_TRIPLE:-$(uname -m)-apple-darwin}" in
+  x86_64-*) arch=x86_64 ;;
+  aarch64-* | arm64-*) arch=arm64 ;;
+  *) echo "build-share.sh: unknown target ${TAURI_ENV_TARGET_TRIPLE:-}" >&2; exit 1 ;;
+esac
+
 xcrun swiftc \
-  -target arm64-apple-macos11 \
+  -target "$arch-apple-macos11" \
   -module-name YonShare \
   -parse-as-library \
   -application-extension \

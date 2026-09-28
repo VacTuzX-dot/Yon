@@ -168,6 +168,7 @@ pub struct SelectionDto {
 struct FileDto {
     name: String,
     size: u64,
+    dir: Option<String>,
 }
 
 #[derive(Serialize, Clone)]
@@ -331,6 +332,94 @@ fn file_name(p: &Path) -> String {
     p.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default()
+}
+
+/// Files the OS puts in folders on its own; never worth sending.
+const CLUTTER: &[&str] = &[".DS_Store", "Thumbs.db", "desktop.ini"];
+
+fn too_many() -> String {
+    format!(
+        "That's more than {} files. Send fewer at a time.",
+        crate::protocol::MAX_FILES
+    )
+}
+
+/// What to send for the paths a person picked: files as they are, folders
+/// with everything inside. Inside folders, links are skipped, not followed,
+/// so a folder can't pull in files from elsewhere.
+fn collect_files(paths: Vec<PathBuf>) -> Result<Vec<OutFile>, String> {
+    let mut out = Vec::new();
+    for path in paths {
+        let Ok(meta) = std::fs::metadata(&path) else {
+            continue;
+        };
+        if meta.is_dir() {
+            walk(&path, file_name(&path), 1, &mut out)?;
+        } else if meta.is_file() {
+            out.push(OutFile {
+                name: file_name(&path),
+                size: meta.len(),
+                path,
+                dir: None,
+            });
+        }
+        if out.len() > crate::protocol::MAX_FILES {
+            return Err(too_many());
+        }
+    }
+    Ok(out)
+}
+
+fn walk(dir: &Path, rel: String, depth: usize, out: &mut Vec<OutFile>) -> Result<(), String> {
+    if depth > crate::protocol::MAX_DIR_DEPTH {
+        return Err(format!("\"{rel}\" has too many folders inside folders."));
+    }
+    let mut entries: Vec<_> = std::fs::read_dir(dir)
+        .map_err(|e| format!("Can't open the folder \"{rel}\": {e}"))?
+        .flatten()
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Ok(kind) = entry.file_type() else {
+            continue;
+        };
+        if kind.is_symlink() || CLUTTER.contains(&name.as_str()) {
+            continue;
+        }
+        if kind.is_dir() {
+            walk(&entry.path(), format!("{rel}/{name}"), depth + 1, out)?;
+        } else if kind.is_file() {
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            out.push(OutFile {
+                name,
+                size: meta.len(),
+                path: entry.path(),
+                dir: Some(rel.clone()),
+            });
+            if out.len() > crate::protocol::MAX_FILES {
+                return Err(too_many());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn selection_dto(id: u64, files: &[OutFile]) -> SelectionDto {
+    SelectionDto {
+        id,
+        total: files.iter().map(|f| f.size).sum(),
+        files: files
+            .iter()
+            .map(|f| FileDto {
+                name: f.name.clone(),
+                size: f.size,
+                dir: f.dir.clone(),
+            })
+            .collect(),
+    }
 }
 
 // ---------- setup ----------
@@ -696,38 +785,17 @@ impl AppState {
         cfg!(target_os = "macos") || self.settings.lock().expect("lock").close_to_tray
     }
 
-    /// Turn paths into a stored selection. Only existing regular files are
-    /// kept (Phase 1 sends files, not folders); the UI gets names and sizes.
-    fn make_selection(&self, paths: Vec<PathBuf>) -> Option<SelectionDto> {
-        let files: Vec<OutFile> = paths
-            .into_iter()
-            .filter_map(|path| {
-                let meta = std::fs::metadata(&path).ok()?;
-                meta.is_file().then(|| OutFile {
-                    name: file_name(&path),
-                    size: meta.len(),
-                    path,
-                })
-            })
-            .take(crate::protocol::MAX_FILES)
-            .collect();
+    /// Turn picked paths into a stored selection (paths stay here; the UI
+    /// gets names, folders and sizes).
+    fn make_selection(&self, paths: Vec<PathBuf>) -> Result<SelectionDto, String> {
+        let files = collect_files(paths)?;
         if files.is_empty() {
-            return None;
+            return Err("There's nothing to send in there.".into());
         }
         let id = self.id();
-        let dto = SelectionDto {
-            id,
-            total: files.iter().map(|f| f.size).sum(),
-            files: files
-                .iter()
-                .map(|f| FileDto {
-                    name: f.name.clone(),
-                    size: f.size,
-                })
-                .collect(),
-        };
+        let dto = selection_dto(id, &files);
         self.selections.lock().expect("lock").insert(id, files);
-        Some(dto)
+        Ok(dto)
     }
 
     fn id(&self) -> u64 {
@@ -764,18 +832,66 @@ pub async fn pick_files(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<SelectionDto>, String> {
-    let picked =
-        tauri::async_runtime::spawn_blocking(move || app.dialog().file().blocking_pick_files())
-            .await
-            .map_err(|e| e.to_string())?;
+    match pick_paths(app, false).await? {
+        Some(paths) => state.make_selection(paths).map(Some),
+        None => Ok(None),
+    }
+}
+
+/// Ask for files (or folders) and add them to a selection being confirmed.
+#[tauri::command]
+pub async fn add_to_selection(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    id: u64,
+    folders: bool,
+) -> Result<Option<SelectionDto>, String> {
+    let Some(paths) = pick_paths(app, folders).await? else {
+        return Ok(None);
+    };
+    let more = collect_files(paths)?;
+    let mut selections = state.selections.lock().expect("lock");
+    let files = selections
+        .get_mut(&id)
+        .ok_or("Those files are no longer selected.")?;
+    if files.len() + more.len() > crate::protocol::MAX_FILES {
+        return Err(too_many());
+    }
+    files.extend(more);
+    Ok(Some(selection_dto(id, files)))
+}
+
+/// Ask for folders to send.
+#[tauri::command]
+pub async fn pick_folders(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<SelectionDto>, String> {
+    match pick_paths(app, true).await? {
+        Some(paths) => state.make_selection(paths).map(Some),
+        None => Ok(None),
+    }
+}
+
+async fn pick_paths(app: AppHandle, folders: bool) -> Result<Option<Vec<PathBuf>>, String> {
+    let picked = tauri::async_runtime::spawn_blocking(move || {
+        let dialog = app.dialog().file();
+        if folders {
+            dialog.blocking_pick_folders()
+        } else {
+            dialog.blocking_pick_files()
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?;
     let Some(picked) = picked else {
         return Ok(None);
     };
-    let mut paths = Vec::new();
-    for fp in picked {
-        paths.push(fp.into_path().map_err(|e| e.to_string())?);
-    }
-    Ok(state.make_selection(paths))
+    picked
+        .into_iter()
+        .map(|fp| fp.into_path().map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()
+        .map(Some)
 }
 
 #[tauri::command]
@@ -1411,25 +1527,34 @@ pub fn paths_from_args(args: &[String], cwd: &Path) -> Vec<PathBuf> {
 /// window up with a device picker. Never sends on its own — any local
 /// program can launch us with paths, so a person must pick and confirm.
 pub fn open_paths(app: &AppHandle, paths: Vec<PathBuf>) {
-    let Some(state) = app.try_state::<AppState>() else {
-        return;
-    };
-    let Some(selection) = state.make_selection(paths) else {
-        return;
-    };
-    if let Some(old) = state.shared.lock().expect("lock").replace(selection) {
-        state.selections.lock().expect("lock").remove(&old.id);
-    }
-    let _ = app.emit("shared", ());
     show_main(app);
+    let app = app.clone();
+    // WHY: off the main thread — a big folder takes a moment to list.
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        match state.make_selection(paths) {
+            Ok(selection) => {
+                if let Some(old) = state.shared.lock().expect("lock").replace(selection) {
+                    state.selections.lock().expect("lock").remove(&old.id);
+                }
+                let _ = app.emit("shared", ());
+            }
+            Err(e) => {
+                let _ = app.emit("selection-error", e);
+            }
+        }
+    });
 }
 
 #[derive(Serialize, Clone)]
 struct DropHoverDto {
     x: f64,
     y: f64,
-    /// Files (not folders) being dragged; sent when the drag enters.
+    /// Files and folders being dragged; sent when the drag enters.
     files: Option<usize>,
+    folders: Option<usize>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1442,22 +1567,35 @@ struct DroppedDto {
 
 /// Files are being dragged over the window: tell the UI where (CSS px) so
 /// it can highlight the device under the pointer; `None` = drag left.
-pub fn drop_hover(app: &AppHandle, at: Option<(f64, f64)>, files: Option<usize>) {
-    let _ = app.emit("drop-hover", at.map(|(x, y)| DropHoverDto { x, y, files }));
+pub fn drop_hover(app: &AppHandle, at: Option<(f64, f64)>, counts: Option<(usize, usize)>) {
+    let _ = app.emit(
+        "drop-hover",
+        at.map(|(x, y)| DropHoverDto {
+            x,
+            y,
+            files: counts.map(|c| c.0),
+            folders: counts.map(|c| c.1),
+        }),
+    );
 }
 
 /// Files dropped on the window: stash them (paths stay here) and let the UI
 /// ask for confirmation, for the device under the drop point if any.
 pub fn dropped(app: &AppHandle, paths: Vec<PathBuf>, (x, y): (f64, f64)) {
-    let Some(state) = app.try_state::<AppState>() else {
-        return;
-    };
-    if let Some(selection) = state.make_selection(paths) {
-        let _ = app.emit("dropped", DroppedDto { selection, x, y });
-    }
     // WHY: the drop came from another app (Finder), which is still active;
     // without this the first click on the confirm sheet only activates Yon.
     show_main(app);
+    let app = app.clone();
+    // WHY: off the main thread — a big folder takes a moment to list.
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(state) = app.try_state::<AppState>() else {
+            return;
+        };
+        let _ = match state.make_selection(paths) {
+            Ok(selection) => app.emit("dropped", DroppedDto { selection, x, y }),
+            Err(e) => app.emit("selection-error", e),
+        };
+    });
 }
 
 /// The UI asks for pending OS-shared files (on load, and on each "shared").
@@ -1468,7 +1606,43 @@ pub fn take_shared(state: State<'_, AppState>) -> Option<SelectionDto> {
 
 #[cfg(test)]
 mod tests {
-    use super::paths_from_args;
+    use super::{collect_files, paths_from_args};
+
+    #[test]
+    fn folders_are_walked_without_links_or_clutter() {
+        let root = crate::identity::tests::temp_dir("collect");
+        let top = root.join("Trip");
+        std::fs::create_dir_all(top.join("day 2")).unwrap();
+        std::fs::write(top.join("b.jpg"), b"bb").unwrap();
+        std::fs::write(top.join("a.jpg"), b"a").unwrap();
+        std::fs::write(top.join(".DS_Store"), b"x").unwrap();
+        std::fs::write(top.join("day 2").join("c.jpg"), b"ccc").unwrap();
+        std::fs::write(root.join("loose.txt"), b"l").unwrap();
+        #[cfg(unix)]
+        {
+            let outside = root.join("outside");
+            std::fs::create_dir(&outside).unwrap();
+            std::fs::write(outside.join("secret"), b"s").unwrap();
+            std::os::unix::fs::symlink(&outside, top.join("link")).unwrap();
+            std::os::unix::fs::symlink(outside.join("secret"), top.join("s")).unwrap();
+        }
+
+        let files = collect_files(vec![top, root.join("loose.txt"), root.join("gone")]).unwrap();
+        let got: Vec<_> = files
+            .iter()
+            .map(|f| (f.dir.as_deref(), f.name.as_str(), f.size))
+            .collect();
+        assert_eq!(
+            got,
+            [
+                (Some("Trip"), "a.jpg", 1),
+                (Some("Trip"), "b.jpg", 2),
+                (Some("Trip/day 2"), "c.jpg", 3),
+                (None, "loose.txt", 1),
+            ]
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
     use std::path::{Path, PathBuf};
 
     #[test]

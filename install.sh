@@ -1,5 +1,5 @@
 #!/bin/bash
-# Install Yon on macOS (Apple Silicon) from GitHub Releases.
+# Install Yon on macOS (Apple Silicon or Intel) from GitHub Releases.
 #
 #   curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash
 #
@@ -32,7 +32,10 @@ main() {
   fi
 
   [[ "$(uname -s)" == Darwin ]] || die "this script is for macOS. On Windows, download the installer from https://github.com/$repo/releases"
-  [[ "$(uname -m)" == arm64 ]] || die "Yon is built for Apple Silicon Macs only."
+  # WHY: sysctl, not uname -m — a Terminal running under Rosetta reports
+  # x86_64 on an Apple Silicon Mac.
+  local arch=x64
+  [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == 1 ]] && arch=aarch64
   [[ -d "$dir" && -w "$dir" ]] || die "can't write to $dir. Try: YON_INSTALL_DIR=~/Applications (create it first)"
   if pgrep -f "$dir/Yon.app/Contents/MacOS/" >/dev/null; then
     die "Yon is running. Quit it (menu bar icon → Quit) and run this again."
@@ -44,8 +47,8 @@ main() {
   say "Checking the release…"
   curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/SHA256SUMS.txt" "$base/SHA256SUMS.txt"
   local line name sum
-  line="$(grep -E '^[0-9a-f]{64}  Yon_[0-9]+\.[0-9]+\.[0-9]+_aarch64\.app\.tar\.gz$' "$tmp/SHA256SUMS.txt")" \
-    || die "the release has no macOS app."
+  line="$(grep -E "^[0-9a-f]{64}  Yon_[0-9]+\.[0-9]+\.[0-9]+_${arch}\.app\.tar\.gz\$" "$tmp/SHA256SUMS.txt")" \
+    || die "the release has no app for this Mac ($arch). Intel Macs need Yon 0.2.3 or later."
   [[ "$(wc -l <<<"$line")" -eq 1 ]] || die "the release lists more than one macOS app."
   sum="${line%%  *}"
   name="${line#*  }"

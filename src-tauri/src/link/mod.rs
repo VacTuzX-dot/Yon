@@ -735,7 +735,13 @@ impl Link {
         let request = TransferRequest {
             name: s.phone_name.clone(),
             os: "web".into(),
-            files: body.files,
+            // WHY: the phone page never sends folders, and this path writes
+            // flat; drop any folder so the Accept dialog shows what happens.
+            files: body
+                .files
+                .into_iter()
+                .map(|f| FileMeta { dir: None, ..f })
+                .collect(),
         };
         let mut admission =
             match self
@@ -985,6 +991,7 @@ impl Link {
                     size: std::fs::metadata(path).ok()?.len(),
                     name: path.file_name()?.to_string_lossy().into_owned(),
                     path: path.clone(),
+                    dir: None,
                 })
             })
             .collect();

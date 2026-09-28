@@ -4,8 +4,8 @@ use crate::identity::{peer_fingerprint, Fingerprint, Identity};
 use crate::protocol::{
     read_frame, write_frame, Frame, ProtoError, TransferRequest, PROTOCOL_VERSION,
 };
-use crate::sanitize::sanitize_file_name;
-use crate::transfer::{recv_body, Reserved, IDLE_TIMEOUT};
+use crate::sanitize::{sanitize_dir, sanitize_file_name};
+use crate::transfer::{recv_body, Folders, Reserved, IDLE_TIMEOUT};
 use crate::{platform, Throttle};
 use std::collections::HashMap;
 use std::io;
@@ -51,6 +51,8 @@ pub struct IncomingFile {
     pub name: String,
     pub size: u64,
     pub renamed: bool,
+    /// Folder levels below the save folder (sanitized); empty = loose file.
+    pub dir: Vec<String>,
 }
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -278,6 +280,7 @@ impl Receiver {
         write_frame(&mut wr, &Frame::Accept).await?;
 
         let mut saved = Vec::new();
+        let mut folders = Folders::default();
         let mut throttle = Throttle::new();
         let mut done_bytes = 0u64;
         let ui = self.ui.clone();
@@ -289,7 +292,7 @@ impl Receiver {
                 }
             };
             let result = tokio::select! {
-                r = receive_one(&mut rd, &save_dir, file, &mut on_bytes) => r,
+                r = receive_one(&mut rd, &save_dir, &mut folders, file, &mut on_bytes) => r,
                 _ = cancel.notified() => {
                     let _ = write_frame(&mut wr, &Frame::Cancel).await;
                     let _ = wr.shutdown().await;
@@ -380,10 +383,13 @@ impl Receiver {
             .iter()
             .map(|f| {
                 let name = sanitize_file_name(&f.name);
+                let dir = f.dir.as_deref().map(sanitize_dir).unwrap_or_default();
                 IncomingFile {
-                    renamed: name != f.name,
+                    renamed: name != f.name
+                        || f.dir.as_deref().is_some_and(|raw| raw != dir.join("/")),
                     name,
                     size: f.size,
+                    dir,
                 }
             })
             .collect();
@@ -478,14 +484,18 @@ enum RecvError {
 
 async fn receive_one<R: tokio::io::AsyncRead + Unpin>(
     rd: &mut R,
-    dir: &std::path::Path,
+    save_dir: &std::path::Path,
+    folders: &mut Folders,
     file: &IncomingFile,
     progress: &mut (dyn FnMut(u64) + Send),
 ) -> Result<PathBuf, RecvError> {
     use crate::transfer::BodyError;
     let fail = |what: &str, e: &dyn std::fmt::Display| RecvError::Failed(format!("{what}: {e}"));
 
-    let reserved = Reserved::claim(dir, &file.name).map_err(|e| fail("cannot create file", &e))?;
+    let dir = folders
+        .dir_for(save_dir, &file.dir)
+        .map_err(|e| fail("cannot create folder", &e))?;
+    let reserved = Reserved::claim(&dir, &file.name).map_err(|e| fail("cannot create file", &e))?;
     let mut part = reserved
         .open_part()
         .await

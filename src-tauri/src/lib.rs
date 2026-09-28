@@ -85,7 +85,8 @@ pub fn run() {
                 match drop {
                     tauri::DragDropEvent::Enter { paths, position } => {
                         let files = paths.iter().filter(|p| p.is_file()).count();
-                        app::drop_hover(app, Some(css(position)), Some(files));
+                        let folders = paths.iter().filter(|p| p.is_dir()).count();
+                        app::drop_hover(app, Some(css(position)), Some((files, folders)));
                     }
                     tauri::DragDropEvent::Over { position } => {
                         app::drop_hover(app, Some(css(position)), None);
@@ -114,6 +115,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app::get_state,
             app::pick_files,
+            app::pick_folders,
+            app::add_to_selection,
             app::clear_selection,
             app::send,
             app::cancel_send,

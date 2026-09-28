@@ -143,6 +143,7 @@ mod tests {
             path: PathBuf::from("x"),
             name: "x".into(),
             size,
+            dir: None,
         }
     }
 

@@ -13,7 +13,7 @@ Yon is a small, open-source desktop app for sending files between computers on t
 ## What it does
 
 - Finds other Yon devices on your Wi-Fi automatically.
-- Tap a device, pick files, send. The other side sees who is sending, the file list and total size, and chooses Accept or Decline.
+- Tap a device, pick files, send. Folders too: drop one on a device or choose **Send a folder…** from the device's ⋯ menu; it arrives as a new folder with everything inside. The other side sees who is sending, the file list and total size, and chooses Accept or Decline.
 - Progress on both sides, with Cancel on both sides.
 - Large files are streamed, so a 1 GB file uses a few MB of memory, and every file is checked with SHA-256 when it arrives.
 - Received files go to `Downloads/Yon` (you can change this). Existing files are never overwritten: you get `photo (1).jpg` instead.
@@ -27,8 +27,12 @@ Download the latest build from [Releases](https://github.com/VacTuzX-dot/Yon/rel
 
 | Platform | File |
 |---|---|
-| macOS (Apple Silicon) | `Yon_x.y.z_aarch64.dmg` |
-| Windows (x64) | `Yon_x.y.z_x64-setup.exe` |
+| macOS (Apple Silicon: M1 and newer) | `Yon_x.y.z_aarch64.dmg` |
+| macOS (Intel) | `Yon_x.y.z_x64.dmg` (0.2.3 and newer) |
+| Windows (x64: Intel or AMD) | `Yon_x.y.z_x64-setup.exe` |
+| Windows on ARM (Snapdragon) | `Yon_x.y.z_arm64-setup.exe` (0.2.3 and newer) |
+
+Each release page starts with a table of direct download links. 32-bit Windows isn't supported.
 
 The builds aren't notarized by Apple or signed for Windows, so your OS warns you the first time. What changed in each version, and known problems with their fixes: [CHANGELOG](CHANGELOG.md).
 
@@ -82,7 +86,7 @@ On Windows (PowerShell), compare the output of `Get-FileHash .\Yon_x.y.z_x64-set
 
 - Every install has its own Ed25519 key. Connections use mutual TLS 1.3, and the sender checks it is talking to the exact device it discovered.
 - The receiver sees the sender's **device code** (for example `A1B2-C3D4-E5F6-0718`). Device names can be faked; if you're unsure, ask the sender to open Settings in Yon and compare codes.
-- Nothing is written until you accept — unless you ticked "Always accept from this device" for that sender. That list is matched by device code (the key proven in the connection), not by name, and you can remove devices in Settings. File names are cleaned so they can't escape the save folder or collide with system names.
+- Nothing is written until you accept — unless you ticked "Always accept from this device" for that sender. That list is matched by device code (the key proven in the connection), not by name, and you can remove devices in Settings. File and folder names are cleaned so they can't escape the save folder or collide with system names, and a received folder is always created new, never merged into one that's already there.
 - Received files are marked as downloaded (macOS quarantine / Windows Mark-of-the-Web), so the OS still checks them when opened.
 - Yon only accepts connections from private network addresses.
 - While Yon is running (including in the menu bar / tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
@@ -127,6 +131,8 @@ cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings &
 ```bash
 bun run test
 ```
+
+CI also runs `cargo audit` and `bun audit` (known vulnerabilities in dependencies) and checks that Yon compiles for Intel Macs and Windows on ARM.
 
 `bun run test` checks that the phone page's encryption matches the Rust side byte for byte (shared vectors in `web/crypto-vectors.json`).
 
@@ -192,7 +198,7 @@ src-tauri/tests/     end-to-end tests: transfers over TLS, a fake phone over Yon
 
 ## Roadmap
 
-- **Next:** drag and drop, send folders, send text / clipboard, transfer history.
+- **Next:** send text / clipboard, transfer history.
 - **Later:** transfers across networks (via [iroh](https://iroh.computer)), optional LocalSend compatibility, native mobile apps.
 
 ## License

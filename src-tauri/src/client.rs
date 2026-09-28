@@ -38,6 +38,8 @@ pub struct OutFile {
     pub path: PathBuf,
     pub name: String,
     pub size: u64,
+    /// Folder inside what was picked, `/`-separated ("Photos/2024").
+    pub dir: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
@@ -115,6 +117,7 @@ async fn run(
             .map(|f| FileMeta {
                 name: f.name.clone(),
                 size: f.size,
+                dir: f.dir.clone(),
             })
             .collect(),
     };
