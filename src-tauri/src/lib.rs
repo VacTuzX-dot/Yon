@@ -71,7 +71,15 @@ pub fn run() {
             if let tauri::WindowEvent::DragDrop(drop) = event {
                 // WHY: handled here so dropped paths stay in Rust; the UI
                 // only learns where they landed (CSS px) and gets an id.
-                let scale = window.scale_factor().unwrap_or(1.0);
+                // WHY: despite the `PhysicalPosition` type, wry reports macOS
+                // (AppKit points) and Linux (GTK) drops in CSS px already;
+                // only Windows (ScreenToClient) is in device pixels. Dividing
+                // on macOS halved y on Retina and lit up the wrong device.
+                let scale = if cfg!(windows) {
+                    window.scale_factor().unwrap_or(1.0)
+                } else {
+                    1.0
+                };
                 let css = |p: &tauri::PhysicalPosition<f64>| (p.x / scale, p.y / scale);
                 let app = window.app_handle();
                 match drop {

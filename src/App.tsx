@@ -19,6 +19,7 @@ import {
 } from "./api";
 import ConfirmSheet from "./components/ConfirmSheet";
 import DeviceOrbit, { initials, type DeviceActivity } from "./components/DeviceOrbit";
+import DropZone from "./components/DropZone";
 import IncomingDialog from "./components/IncomingDialog";
 import PairPhoneSheet from "./components/PairPhoneSheet";
 import { LogoShapes } from "./components/Logo";
@@ -239,7 +240,7 @@ export default function App() {
   };
 
   return (
-    <main className={dragging ? "app dragging" : "app"}>
+    <main className="app">
       <header>
         <span className="wordmark">
           <svg className="logo" viewBox="195 30 130 130" aria-hidden>
@@ -262,28 +263,22 @@ export default function App() {
 
       <section className="stage">
         <h1>
-          {dragging
-            ? dragging.files === 0
-              ? "Folders can't be sent yet. Drop files instead"
-              : `Drop ${dragging.files === 1 ? "the file" : `${dragging.files} files`} on a device`
-            : devices.length
-              ? "Choose a device, or drop files on it"
-              : "Looking for devices nearby"}
+          {devices.length ? "Choose a device, or drop files on it" : "Looking for devices nearby"}
         </h1>
-        <DeviceOrbit
-          devices={devices}
-          activity={activity}
-          recent={recent}
-          dragging={dragging !== null}
-          dropTarget={dragging?.over ?? null}
-          onPick={pickFor}
-          onCancel={setStopping}
-          error={state.discovery_error}
-        />
+        <DropZone dragging={dragging}>
+          <DeviceOrbit
+            devices={devices}
+            activity={activity}
+            recent={recent}
+            dragging={dragging !== null}
+            dropTarget={dragging?.over ?? null}
+            onPick={pickFor}
+            onCancel={setStopping}
+            error={state.discovery_error}
+          />
+        </DropZone>
         {error && <p className="hint bad">{error}</p>}
-        <button type="button" className="quiet pair-button" onClick={() => setPairing(true)}>
-          Pair a phone
-        </button>
+
       </section>
 
       {receiving.length > 0 && (
@@ -333,6 +328,23 @@ export default function App() {
         </ul>
       )}
 
+      {/* Always in reach, however long the device list gets. */}
+      <button
+        type="button"
+        onClick={() => setPairing(true)}
+        className="fixed right-6 bottom-6 z-10 flex min-h-12 items-center gap-2 rounded-full border-0 bg-accent py-3 pr-5 pl-4 shadow-[0_10px_30px_-10px_var(--accent)] transition-[transform,filter] duration-150 ease-snappy hover:brightness-105 motion-safe:active:scale-[0.97]"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          aria-hidden
+          className="size-5 fill-none stroke-accent-ink stroke-2 [stroke-linecap:round] [stroke-linejoin:round]"
+        >
+          <rect x="7" y="2.5" width="10" height="19" rx="2.2" />
+          <path d="M11 18.5h2" />
+          <path d="M19.5 8v4M17.5 10h4" />
+        </svg>
+        <span className="font-semibold text-accent-ink">Pair a phone</span>
+      </button>
       {update && <UpdateBar update={update} onLater={() => setUpdate(null)} />}
       <footer>
         You appear as <strong>{state.me.name}</strong>

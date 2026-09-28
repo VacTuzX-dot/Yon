@@ -1,0 +1,20 @@
+/* Tailwind v4 without its preflight: styles.css keeps the base styles, and
+   Tailwind adds utilities for new components (the drop zone first). */
+@layer theme, base, components, utilities;
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* The app's own colors (light/dark live in styles.css), so `bg-accent/10`
+   and friends follow the theme. */
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-surface: var(--surface);
+  --color-avatar: var(--avatar);
+  --color-ok: var(--ok);
+  --color-bad: var(--bad);
+  --ease-snappy: cubic-bezier(0.23, 1, 0.32, 1);
+}
