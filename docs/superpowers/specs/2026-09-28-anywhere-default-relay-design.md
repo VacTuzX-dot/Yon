@@ -289,10 +289,10 @@ rotation is complete only after G6.
 | # | Check | How | Required before |
 |---|---|---|---|
 | G1 | The v0.2.1 `.sig` files verify cryptographically with the **old** key and fail with the new key | OpenSSL Ed25519 on the draft files: BLAKE2b-512 prehash (`ED`), the file signature and the trusted-comment signature; `latest.json` signatures equal the `.sig` files | Publishing v0.2.1 |
-| G2 | v0.2.1 embeds the **new** public key and not the old one | The exact pubkey string in the macOS updater bundle's binary; the Windows `yon.exe` extracted from the NSIS installer | Publishing v0.2.1 |
-| G3 | The new **private** key matches the embedded public key | The maintainer signs a test file with `~/.tauri/yon-updater-v2.key` (the password is typed at a hidden prompt and never printed); the agent verifies the signature with the new public key | Rotating the GitHub secret |
+| G2 | Every distributed build of v0.2.1 embeds the **new** public key and not the old one | First check each file against `SHA256SUMS.txt`, then search for the exact pubkey strings (new: 1 match, old: 0) in: (a) the app binary in the macOS updater bundle `.app.tar.gz`; (b) the app binary inside the `.dmg` (`Yon.app/Contents/MacOS/yon`); (c) `yon.exe` extracted from the Windows NSIS installer. Extract without mounting or running anything, using an extractor that is already installed (7-Zip with NSIS and DMG support), or use an isolated Windows machine. No new tools without the maintainer's approval. | Publishing v0.2.1 |
+| G3 | The new **private** key matches the embedded public key | The maintainer signs a test file on their own Mac with `~/.tauri/yon-updater-v2.key`, typing the password at a hidden prompt. The agent never receives the private key or the password; it verifies only the resulting `.sig`, with the new public key (G1 method) | Rotating the GitHub secret |
 | G4 | v0.2.0 updates to v0.2.1 | After v0.2.1 is published: the Update button on v0.2.0 (macOS, and Windows if available) installs and relaunches v0.2.1 | Rotating the GitHub secret |
-| G5 | The GitHub secrets hold the new key | Replace both secrets from the file (no printing); then any build's `.sig` must verify with the new key and fail with the old one (G1 method, keys swapped) | Tagging v0.2.2 |
+| G5 | The GitHub secrets hold the new key | Replace both secrets from the file (no printing). Then, for the v0.2.2 draft: every `.sig` must verify with the new key and fail with the old one (G1 method, keys swapped), and every distributed build must still embed the new key (G2 method) | Publishing v0.2.2 |
 | G6 | v0.2.1 accepts an update signed by the new key | The Update button on v0.2.1 installs and relaunches v0.2.2 | Declaring the rotation complete |
 
 Additional rules:
