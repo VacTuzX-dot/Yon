@@ -70,6 +70,7 @@ export default function App() {
       on("incoming", (req) => setIncoming(req)),
       on("shared", () => takeShared()),
       on("update-available", (u) => setUpdate(u)),
+      on("settings-changed", (settings) => setState((s) => (s ? { ...s, settings } : s))),
       on("remote-status", (remote_status) =>
         setState((s) => (s ? { ...s, settings: { ...s.settings, remote_status } } : s)),
       ),

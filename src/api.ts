@@ -22,13 +22,34 @@ export interface Settings {
   show_in_dock: boolean;
   check_updates: boolean;
   trusted: { id: string; name: string }[];
-  phones: { id: string; name: string; created: number }[];
+  phones: Phone[];
   /** Set when phones can't connect (Yon Link port busy). */
   link_error: string | null;
   /** Reach from anywhere (ADR-003). */
   remote: boolean;
   relay_url: string;
+  /** Built-in relay of this build, if any (normalized URL). */
+  default_relay: string | null;
+  /** Relay in use when Reach from anywhere is on: override, else built-in. */
+  effective_relay: string | null;
   remote_status: RemoteStatus | null;
+}
+
+/** home_only: remote is on but this phone's link isn't through the current relay. */
+export type PhoneNote = "home_only" | "needs_remote";
+
+export interface Phone {
+  id: string;
+  name: string;
+  created: number;
+  note: PhoneNote | null;
+  /** A "Pair again" not confirmed yet; not shown, not a send target. */
+  pending: boolean;
+}
+
+export interface CancelResult {
+  outcome: "cancelled" | "completed" | "not_found";
+  settings: Settings;
 }
 
 export type RemoteStatus =
@@ -145,7 +166,9 @@ export const api = {
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),
   setCloseToTray: (enabled: boolean) => invoke<Settings>("set_close_to_tray", { enabled }),
   setShowInDock: (enabled: boolean) => invoke<Settings>("set_show_in_dock", { enabled }),
-  pairPhone: (name: string) => invoke<Pairing>("pair_phone", { name }),
+  pairPhone: (name: string, replaces?: string) =>
+    invoke<Pairing>("pair_phone", { name, replaces: replaces ?? null }),
+  cancelPairing: (id: string) => invoke<CancelResult>("cancel_pairing", { id }),
   unpairPhone: (id: string) => invoke<Settings>("unpair_phone", { id }),
   checkUpdate: () => invoke<Update | null>("check_update"),
   installUpdate: () => invoke<void>("install_update"),
@@ -167,6 +190,7 @@ export interface Events {
   "update-available": Update;
   "update-progress": { done: number; total: number | null };
   "remote-status": RemoteStatus;
+  "settings-changed": Settings;
 }
 
 export function on<K extends keyof Events>(
@@ -178,7 +202,7 @@ export function on<K extends keyof Events>(
 
 /** Computers found nearby plus paired phones (sent to over Yon Link). */
 export function allDevices(state: AppState): Device[] {
-  const phones: Device[] = state.settings.phones.map((p) => ({
+  const phones: Device[] = state.settings.phones.filter((p) => !p.pending).map((p) => ({
     id: `phone:${p.id}`,
     name: p.name,
     os: "phone",
