@@ -97,6 +97,9 @@ pub fn phone_fingerprint(id: &[u8; 16]) -> Fingerprint {
     out
 }
 
+/// Receives the phone id when a session first proves its pairing key.
+pub type OnAuthenticated = Arc<dyn Fn([u8; 16]) + Send + Sync>;
+
 pub struct Link {
     receiver: Arc<Receiver>,
     phones: RwLock<HashMap<[u8; 16], Phone>>,
@@ -113,6 +116,8 @@ pub struct Link {
     /// Last request per phone, for "online" in the device list.
     seen: Mutex<HashMap<[u8; 16], Instant>>,
     on_presence: RwLock<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// Called once per session when a phone first proves its pairing key.
+    on_authenticated: RwLock<Option<OnAuthenticated>>,
     /// Holds phone → phone files between upload and download.
     relay_root: RwLock<PathBuf>,
 }
@@ -126,6 +131,8 @@ struct Session {
     out: u64,
     last_seen: Instant,
     upload: Option<Upload>,
+    /// The pairing key has been proven in this session (see `sealed`).
+    authed: bool,
 }
 
 struct Upload {
@@ -192,6 +199,7 @@ impl Link {
             inbox: tokio::sync::Notify::new(),
             seen: Mutex::new(HashMap::new()),
             on_presence: RwLock::new(None),
+            on_authenticated: RwLock::new(None),
             relay_root: RwLock::new(std::env::temp_dir().join("yon-relay")),
         })
     }
@@ -295,6 +303,13 @@ impl Link {
     /// Called whenever a phone comes online or goes offline.
     pub fn set_presence_listener(&self, f: Arc<dyn Fn() + Send + Sync>) {
         *self.on_presence.write().expect("lock") = Some(f);
+    }
+
+    /// Called once per session, with the phone id, after the first request
+    /// that opened under the pairing key. Never from `/hello`, a bad tag,
+    /// or a replay.
+    pub fn set_on_authenticated(&self, f: OnAuthenticated) {
+        *self.on_authenticated.write().expect("lock") = Some(f);
     }
 
     fn presence_changed(&self) {
@@ -463,6 +478,7 @@ impl Link {
                 out: 0,
                 last_seen: Instant::now(),
                 upload: None,
+                authed: false,
             })),
         );
         let name = self.computer_name.read().expect("lock").clone();
@@ -502,6 +518,13 @@ impl Link {
             .key
             .open(Dir::PhoneToComputer, ctr, &route, &sid, &req.body)?;
         s.inbound.mark(ctr);
+        if !s.authed {
+            s.authed = true;
+            let f = self.on_authenticated.read().expect("lock").clone();
+            if let Some(f) = f {
+                f(s.phone_id);
+            }
+        }
         s.last_seen = Instant::now();
         if s.ip != ip {
             s.ip = ip; // phone moved networks mid-session; keep going

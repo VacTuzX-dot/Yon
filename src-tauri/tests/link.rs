@@ -1089,3 +1089,38 @@ mod relay {
         client.abort();
     }
 }
+
+#[tokio::test]
+async fn authenticated_fires_only_after_valid_sealed_request() {
+    let env = setup("authed", Mode::Accept).await;
+    let seen = Arc::new(Mutex::new(Vec::<[u8; 16]>::new()));
+    let log = seen.clone();
+    env.link
+        .set_on_authenticated(Arc::new(move |id| log.lock().unwrap().push(id)));
+
+    // /hello alone proves nothing.
+    let mut p = FakePhone::hello(env.addr, &env.phone).await;
+    assert!(seen.lock().unwrap().is_empty(), "hello");
+    // Wrong key → bad tag.
+    let mut wrong = FakePhone::hello(
+        env.addr,
+        &Phone {
+            key: [0x44; 32],
+            ..env.phone.clone()
+        },
+    )
+    .await;
+    assert_eq!(wrong.call("POST", "/status", b"").await.0, 404);
+    assert!(seen.lock().unwrap().is_empty(), "bad tag");
+
+    // First valid sealed request fires once; later ones and replays don't.
+    assert_eq!(p.call("POST", "/status", b"").await.0, 200);
+    assert_eq!(p.raw_call("POST", "/status", b"", 1).await.0, 404, "replay");
+    assert_eq!(p.call("POST", "/status", b"").await.0, 200);
+    assert_eq!(*seen.lock().unwrap(), vec![env.phone.id]);
+
+    // A new session fires again.
+    let mut again = FakePhone::hello(env.addr, &env.phone).await;
+    assert_eq!(again.call("POST", "/status", b"").await.0, 200);
+    assert_eq!(seen.lock().unwrap().len(), 2);
+}
