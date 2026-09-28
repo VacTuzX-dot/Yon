@@ -40,3 +40,15 @@ Link protocol itself is covered by threat-model-yon-link.md.
 - [ ] Relay tests: secret check, one computer per room, size/rate limits, timeouts
 - [ ] Desktop feature off by default; clear status in Settings
 - [ ] Page build pinned (SRI) and deployed only by CI
+
+### Built-in relay (v0.2.2)
+
+- **Who runs it:** the maintainer, on their own server behind Cloudflare
+  Tunnel. Users who don't want that set their own relay address.
+- **What it sees:** internet addresses of the computer and phones, when they
+  connect, and how much they send. Contents stay encrypted end to end with
+  the pairing key; the relay never holds it.
+- **Pair again:** the old pairing is removed only after the new key is
+  proven in an authenticated session, so a scanned-but-abandoned code can't
+  lock the user out; unused pending pairings expire after 15 minutes and at
+  startup.

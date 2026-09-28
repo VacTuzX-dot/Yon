@@ -80,3 +80,18 @@ Carry the existing Yon Link protocol over a small relay:
 3. Page: relay transport next to fetch; build for GitHub Pages with SRI.
 4. Pairing QR carries the room id; docs, threat model update.
 5. Deploy relay on meox (maintainer) and test on iPhone over 4G.
+
+## Addendum (2026-09-28): built-in relay and "Pair again"
+
+- Release builds carry a default relay, set at build time from the repo
+  variable `YON_DEFAULT_RELAY` (`settings::default_relay`). No hostname is in
+  the source. Dev builds have none. The user can still enter their own relay
+  under Settings → Advanced; it replaces the built-in one.
+- "Reach from anywhere" stays off by default; with a built-in relay it is
+  one click. When it is on, every new pairing goes through the relay, at home
+  too (the HTTPS page can't reach the computer's `http://` LAN address).
+- Phones paired before, or to another relay, show "Home Wi-Fi only · Pair
+  again". Pair again creates a pending pairing; the old one keeps working
+  until the phone proves the new key, then the old one is removed. A pending
+  pairing that never connects is dropped after 15 minutes.
+- Spec: `docs/superpowers/specs/2026-09-28-anywhere-default-relay-design.md`.
