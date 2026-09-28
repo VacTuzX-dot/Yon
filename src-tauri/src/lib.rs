@@ -99,6 +99,7 @@ pub fn run() {
             app::set_show_in_dock,
             app::pair_phone,
             app::unpair_phone,
+            app::cancel_pairing,
             app::check_update,
             app::install_update,
             app::set_check_updates,

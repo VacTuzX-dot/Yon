@@ -80,6 +80,9 @@ jobs:
           # with this key (public half in tauri.conf.json).
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Built-in relay for "Reach from anywhere" (settings.rs
+          # default_relay); empty until the maintainer sets the variable.
+          YON_DEFAULT_RELAY: ${{ vars.YON_DEFAULT_RELAY }}
         with:
           tauriScript: bun tauri
           args: ${{ matrix.args }}

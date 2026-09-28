@@ -30,6 +30,12 @@ use tokio::sync::{oneshot, Notify};
 /// Finished receives kept for "Show in Finder/Explorer".
 const MAX_REMEMBERED: usize = 50;
 
+fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs())
+}
+
 pub struct AppState {
     app: AppHandle,
     identity: Arc<Identity>,
@@ -56,6 +62,9 @@ pub struct AppState {
     /// Relay connection (ADR-003) and the URL it was started with.
     remote_task: Mutex<Option<(JoinHandle<()>, String)>>,
     remote_status: Arc<Mutex<Option<RemoteStatus>>>,
+    /// The pending-pairing expiry loop is running. Changed only while the
+    /// settings lock is held, so a new pending pairing can't be missed.
+    expiry_running: AtomicBool,
     /// Newest version found by the last check, ready to install.
     update: Mutex<Option<Update>>,
     updating: AtomicBool,
@@ -82,7 +91,7 @@ struct MeDto {
     version: &'static str,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct SettingsDto {
     device_name: String,
     save_dir: String,
@@ -96,14 +105,27 @@ pub struct SettingsDto {
     link_error: Option<String>,
     remote: bool,
     relay_url: String,
+    /// Built-in relay of this build (normalized), if any.
+    default_relay: Option<String>,
+    /// Relay "Reach from anywhere" uses: the override, else the built-in.
+    effective_relay: Option<String>,
     remote_status: Option<RemoteStatus>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct PhoneDto {
     id: String,
     name: String,
     created: u64,
+    note: Option<settings::Note>,
+    /// Waiting for "Pair again" to be confirmed; hidden in the list.
+    pending: bool,
+}
+
+#[derive(Serialize)]
+pub struct CancelDto {
+    outcome: &'static str,
+    settings: SettingsDto,
 }
 
 #[derive(Serialize)]
@@ -325,7 +347,15 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         .download_dir()
         .or_else(|_| app.path().home_dir())
         .map_err(|e| e.to_string())?;
-    let settings = Settings::load(&data_dir, &downloads);
+    let mut settings = Settings::load(&data_dir, &downloads);
+    // WHY: before Link starts, so a pairing left pending by a crash or a
+    // forced quit can't authenticate after its time is up.
+    match settings::expire_pending(&settings, unix_now(), |n| n.save(&data_dir)) {
+        Ok(Some(next)) => settings = next,
+        Ok(None) => {}
+        Err(e) => eprintln!("[yon] couldn't save pairing change: {e}"),
+    }
+    let has_pending = settings.has_pending();
     let identity = Arc::new(
         Identity::load_or_create(&data_dir).map_err(|e| format!("cannot load identity: {e}"))?,
     );
@@ -385,6 +415,7 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         link_error: Mutex::new(None),
         remote_task: Mutex::new(None),
         remote_status: Arc::new(Mutex::new(None)),
+        expiry_running: AtomicBool::new(false),
         update: Mutex::new(None),
         updating: AtomicBool::new(false),
     };
@@ -398,6 +429,20 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
             let _ = presence_app.emit("phones-online", s.online_phones());
         }
     }));
+    let auth_app = app.clone();
+    state.link.set_on_authenticated(Arc::new(move |id| {
+        // WHY: called from inside a Link request; finish on another task
+        // so saving and `sync_link` never run under Link's session lock.
+        let app = auth_app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Some(state) = app.try_state::<AppState>() {
+                state.complete_pairing(&hex(&id)).await;
+            }
+        });
+    }));
+    if has_pending {
+        state.ensure_expiry_timer();
+    }
     state.advertise()?;
     Ok(state)
 }
@@ -480,7 +525,7 @@ impl AppState {
             let s = self.settings.lock().expect("lock");
             (
                 s.remote,
-                s.relay_url.clone(),
+                settings::effective_relay(&s).unwrap_or_default(),
                 crate::protocol::unhex::<32>(&s.room_secret),
             )
         };
@@ -534,8 +579,85 @@ impl AppState {
             .unwrap_or(0)
     }
 
+    fn emit_settings(&self) {
+        let _ = self.app.emit("settings-changed", self.settings_dto());
+    }
+
+    /// A phone proved its key; finish a "Pair again" if it was pending.
+    async fn complete_pairing(&self, id: &str) {
+        let changed = {
+            let mut s = self.settings.lock().expect("lock");
+            match settings::complete_replacement(&s, id, |n| n.save(&self.data_dir)) {
+                Ok(Some(next)) => {
+                    *s = next;
+                    true
+                }
+                Ok(None) => false,
+                Err(e) => {
+                    eprintln!("[yon] couldn't save pairing change: {e}");
+                    false
+                }
+            }
+        };
+        if changed {
+            self.sync_link().await;
+            self.emit_settings();
+        }
+    }
+
+    /// Drop expired pending pairings. Returns whether any pending remain.
+    async fn expire_pairings(&self) -> bool {
+        let (changed, pending) = {
+            let mut s = self.settings.lock().expect("lock");
+            let changed = match settings::expire_pending(&s, unix_now(), |n| n.save(&self.data_dir))
+            {
+                Ok(Some(next)) => {
+                    *s = next;
+                    true
+                }
+                Ok(None) => false,
+                Err(e) => {
+                    eprintln!("[yon] couldn't save pairing change: {e}");
+                    false
+                }
+            };
+            let pending = s.has_pending();
+            if !pending {
+                // WHY: cleared under the settings lock — `pair_phone` adds a
+                // pending record under the same lock, then starts the loop.
+                self.expiry_running.store(false, Ordering::SeqCst);
+            }
+            (changed, pending)
+        };
+        if changed {
+            self.sync_link().await;
+            self.emit_settings();
+        }
+        pending
+    }
+
+    /// Run the 60 s expiry loop while pending pairings exist.
+    fn ensure_expiry_timer(&self) {
+        if self.expiry_running.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        let app = self.app.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                let Some(state) = app.try_state::<AppState>() else {
+                    continue;
+                };
+                if !state.expire_pairings().await {
+                    break;
+                }
+            }
+        });
+    }
+
     fn settings_dto(&self) -> SettingsDto {
         let s = self.settings.lock().expect("lock");
+        let effective = settings::effective_relay(&s);
         SettingsDto {
             device_name: s.device_name.clone(),
             save_dir: s.save_dir.display().to_string(),
@@ -551,11 +673,15 @@ impl AppState {
                     id: p.id.clone(),
                     name: p.name.clone(),
                     created: p.created,
+                    note: settings::phone_note(p, s.remote, effective.as_deref()),
+                    pending: p.replaces.is_some(),
                 })
                 .collect(),
             link_error: self.link_error.lock().expect("lock").clone(),
             remote: s.remote,
             relay_url: s.relay_url.clone(),
+            default_relay: settings::default_relay(),
+            effective_relay: effective,
             remote_status: self.remote_status.lock().expect("lock").clone(),
         }
     }
@@ -926,10 +1052,15 @@ pub fn set_show_in_dock(
     Ok(state.settings_dto())
 }
 
-/// Pair a new phone: create its secret, start Link, and return the QR. The
-/// key leaves Rust only inside this one-time URL.
+/// Pair a phone, or with `replaces` start "Pair again" for an existing one:
+/// the new pairing stays pending (the old one keeps working) until the phone
+/// proves the new key. The key leaves Rust only inside this one-time URL.
 #[tauri::command]
-pub async fn pair_phone(state: State<'_, AppState>, name: String) -> Result<PairDto, String> {
+pub async fn pair_phone(
+    state: State<'_, AppState>,
+    name: String,
+    replaces: Option<String>,
+) -> Result<PairDto, String> {
     use ring::rand::{SecureRandom, SystemRandom};
     let name = settings::validate_name(&name)?;
     let (mut id, mut key) = ([0u8; 16], [0u8; 32]);
@@ -937,43 +1068,60 @@ pub async fn pair_phone(state: State<'_, AppState>, name: String) -> Result<Pair
     rng.fill(&mut id)
         .and_then(|_| rng.fill(&mut key))
         .map_err(|_| "Couldn't create a pairing key")?;
-    {
+    state.expire_pairings().await;
+    let anywhere_relay = {
         let mut s = state.settings.lock().expect("lock");
-        let created = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
-        if !s.add_phone(settings::PairedPhone {
+        if let Some(old) = &replaces {
+            if !s
+                .phones
+                .iter()
+                .any(|p| p.id == *old && p.replaces.is_none())
+            {
+                return Err("Unknown phone".into());
+            }
+        }
+        let relay = settings::effective_relay(&s).filter(|_| s.remote);
+        let mut next = s.clone();
+        if let Some(old) = &replaces {
+            // A second "Pair again" for the same phone supersedes the first.
+            next.phones.retain(|p| p.replaces.as_ref() != Some(old));
+        }
+        if !next.add_phone(settings::PairedPhone {
             id: hex(&id),
             key: hex(&key),
             name: name.clone(),
-            created,
-            relay: String::new(),
-            replaces: None,
+            created: unix_now(),
+            relay: relay.clone().unwrap_or_default(),
+            replaces: replaces.clone(),
         }) {
             return Err("Too many phones paired. Remove one first.".into());
         }
-        s.save(&state.data_dir)
+        next.save(&state.data_dir)
             .map_err(|e| format!("Could not save settings: {e}"))?;
+        *s = next;
+        relay
+    };
+    // WHY: started after the lock is released; the loop clears its flag
+    // under the settings lock, so this new pending record can't be missed.
+    if replaces.is_some() {
+        state.ensure_expiry_timer();
     }
     state.sync_link().await;
     let phone = Phone { id, key, name };
-    let lan = link::pairing_url(&state.link_host(), &phone);
     let anywhere = {
         let s = state.settings.lock().expect("lock");
-        let secret = unhex::<32>(&s.room_secret);
-        match secret {
-            Some(secret) if s.remote && !s.relay_url.is_empty() => Some(link::anywhere_url(
-                &phone,
-                &remote::room_id(&secret),
-                &s.relay_url,
-            )),
+        match (unhex::<32>(&s.room_secret), &anywhere_relay) {
+            (Some(secret), Some(relay)) => {
+                Some(link::anywhere_url(&phone, &remote::room_id(&secret), relay))
+            }
             _ => None,
         }
     };
     let (qr, fallback) = match &anywhere {
-        Some(url) => (QrDto::new(url.clone())?, Some(QrDto::new(lan)?)),
+        // WHY: no Wi-Fi-only code in anywhere mode — one pairing, one link.
+        Some(url) => (QrDto::new(url.clone())?, None),
         None => (
-            QrDto::new(lan)?,
+            QrDto::new(link::pairing_url(&state.link_host(), &phone))?,
             match link::lan_ipv4() {
                 Some(ip) => Some(QrDto::new(link::pairing_url(&ip.to_string(), &phone))?),
                 None => None,
@@ -1003,6 +1151,33 @@ pub async fn unpair_phone(state: State<'_, AppState>, id: String) -> Result<Sett
     }
     state.sync_link().await;
     Ok(state.settings_dto())
+}
+
+/// The pairing sheet closed before a "Pair again" was confirmed.
+#[tauri::command]
+pub async fn cancel_pairing(state: State<'_, AppState>, id: String) -> Result<CancelDto, String> {
+    let (outcome, changed) = {
+        let mut s = state.settings.lock().expect("lock");
+        match settings::cancel_pending(&s, &id, |n| n.save(&state.data_dir)) {
+            Ok(settings::CancelOutcome::Cancelled(next)) => {
+                *s = next;
+                ("cancelled", true)
+            }
+            Ok(settings::CancelOutcome::Completed) => ("completed", false),
+            Ok(settings::CancelOutcome::NotFound) => ("not_found", false),
+            Err(e) => {
+                eprintln!("[yon] couldn't save pairing change: {e}");
+                return Err(format!("Could not save settings: {e}"));
+            }
+        }
+    };
+    if changed {
+        state.sync_link().await;
+    }
+    Ok(CancelDto {
+        outcome,
+        settings: state.settings_dto(),
+    })
 }
 
 // ---------- updates ----------
@@ -1113,23 +1288,25 @@ pub async fn set_remote(
     relay_url: String,
 ) -> Result<SettingsDto, String> {
     let relay_url = settings::validate_relay_url(&relay_url)?;
-    if enabled && relay_url.is_empty() {
-        return Err("Enter the relay address first".into());
-    }
     {
         let mut s = state.settings.lock().expect("lock");
-        s.remote = enabled;
-        s.relay_url = relay_url;
-        if enabled && s.room_secret.is_empty() {
+        let mut next = s.clone();
+        next.remote = enabled;
+        next.relay_url = relay_url;
+        if enabled && settings::effective_relay(&next).is_none() {
+            return Err("Add a relay address under Advanced to turn this on.".into());
+        }
+        if enabled && next.room_secret.is_empty() {
             use ring::rand::{SecureRandom, SystemRandom};
             let mut secret = [0u8; 32];
             SystemRandom::new()
                 .fill(&mut secret)
                 .map_err(|_| "Couldn't create a room secret")?;
-            s.room_secret = hex(&secret);
+            next.room_secret = hex(&secret);
         }
-        s.save(&state.data_dir)
+        next.save(&state.data_dir)
             .map_err(|e| format!("Could not save settings: {e}"))?;
+        *s = next;
     }
     state.sync_link().await;
     Ok(state.settings_dto())
