@@ -241,6 +241,60 @@ pub fn validate_relay_url(raw: &str) -> Result<String, &'static str> {
     })
 }
 
+/// Relay baked in at build time (`release.yml` sets `YON_DEFAULT_RELAY`
+/// from a repo variable). `None` in dev builds or when it is invalid.
+pub fn default_relay() -> Option<String> {
+    default_relay_from(option_env!("YON_DEFAULT_RELAY"))
+}
+
+fn default_relay_from(raw: Option<&str>) -> Option<String> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    match validate_relay_url(raw) {
+        Ok(url) => Some(url),
+        Err(_) => {
+            static LOGGED: std::sync::Once = std::sync::Once::new();
+            LOGGED.call_once(|| eprintln!("[yon] ignoring invalid built-in relay"));
+            None
+        }
+    }
+}
+
+/// The relay "Reach from anywhere" uses: the user's override, else the
+/// built-in one. Normalized.
+pub fn effective_relay(s: &Settings) -> Option<String> {
+    effective_relay_with(s, default_relay())
+}
+
+fn effective_relay_with(s: &Settings, default: Option<String>) -> Option<String> {
+    if s.relay_url.is_empty() {
+        default
+    } else {
+        Some(s.relay_url.clone())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Note {
+    /// Remote is on but this phone's link doesn't use the current relay.
+    HomeOnly,
+    /// Paired through a relay, but remote is off now.
+    NeedsRemote,
+}
+
+/// Compares normalized URLs only, so equivalent spellings never ask the
+/// user to pair again.
+pub fn phone_note(p: &PairedPhone, remote_on: bool, effective: Option<&str>) -> Option<Note> {
+    if remote_on {
+        (Some(p.relay.as_str()) != effective).then_some(Note::HomeOnly)
+    } else {
+        (!p.relay.is_empty()).then_some(Note::NeedsRemote)
+    }
+}
+
 pub fn validate_port(port: u16) -> Result<u16, &'static str> {
     if port < 1024 {
         return Err("Port must be between 1024 and 65535");
@@ -649,6 +703,44 @@ mod tests {
             None
         );
         assert_eq!(saves.get(), 0);
+    }
+
+    #[test]
+    fn effective_relay_order() {
+        let mut s = Settings::defaults(Path::new("/d"));
+        let default = Some("wss://built-in.example.com".to_string());
+        assert_eq!(effective_relay_with(&s, default.clone()), default);
+        assert_eq!(effective_relay_with(&s, None), None);
+        s.relay_url = "wss://mine.example.com".into();
+        assert_eq!(
+            effective_relay_with(&s, default),
+            Some("wss://mine.example.com".into())
+        );
+        assert_eq!(default_relay_from(None), None);
+        assert_eq!(default_relay_from(Some("")), None);
+        assert_eq!(default_relay_from(Some("http://nope")), None);
+        assert_eq!(
+            default_relay_from(Some("WSS://Built-In.Example.com:443")),
+            Some("wss://built-in.example.com".into())
+        );
+    }
+
+    #[test]
+    fn phone_note_cases() {
+        let relay = "wss://relay.example.com";
+        let mut p = phone(1, None, 0);
+        // Paired before v0.2.2 (no relay) while remote is on.
+        assert_eq!(phone_note(&p, true, Some(relay)), Some(Note::HomeOnly));
+        assert_eq!(phone_note(&p, false, Some(relay)), None);
+        p.relay = relay.into();
+        assert_eq!(phone_note(&p, true, Some(relay)), None);
+        // Paired to a previous relay.
+        assert_eq!(
+            phone_note(&p, true, Some("wss://other.example.com")),
+            Some(Note::HomeOnly)
+        );
+        assert_eq!(phone_note(&p, true, None), Some(Note::HomeOnly));
+        assert_eq!(phone_note(&p, false, Some(relay)), Some(Note::NeedsRemote));
     }
 
     #[test]
