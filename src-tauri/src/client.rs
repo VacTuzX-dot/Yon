@@ -20,6 +20,9 @@ use tokio_rustls::TlsConnector;
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Per candidate address; a black-holed VPN route shouldn't stall the rest.
 const TCP_TIMEOUT: Duration = Duration::from_secs(3);
+/// Whole "Connecting…" phase, across every candidate address: past this the
+/// user sees a failure instead of a spinner that could last ~50 s.
+const CONNECTING_LIMIT: Duration = Duration::from_secs(15);
 /// Receiver auto-declines after 60s; allow for network slack.
 const ANSWER_TIMEOUT: Duration = Duration::from_secs(75);
 
@@ -95,9 +98,12 @@ async fn run(
         Ok(c) => c,
         Err(e) => return failed(e),
     };
-    let tls = match connect_any(&target.addrs, config).await {
-        Ok(t) => t,
-        Err(e) => return failed(e),
+    let tls = match timeout(CONNECTING_LIMIT, connect_any(&target.addrs, config)).await {
+        Ok(Ok(t)) => t,
+        Ok(Err(e)) => return failed(e),
+        Err(_) => {
+            return failed("couldn't reach the device in time. Check that Yon is open on it and it's on this Wi-Fi")
+        }
     };
     let (mut rd, mut wr) = split(tls);
 

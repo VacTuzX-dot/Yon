@@ -249,6 +249,50 @@ button.avatar:disabled:has(.ring) {
 
 /* ---------- drag and drop: the device under the files ---------- */
 
+/* Files over the window: every device that can take them shows it is ready
+   (dashed ring, slight lift), the window gets a dashed drop frame, and the
+   one under the pointer fills with the accent. */
+.app {
+  position: relative;
+}
+
+.app::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 20px;
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.99);
+}
+
+.app.dragging::after {
+  opacity: 1;
+  transform: none;
+}
+
+.orbit.dragging button.avatar:not(:disabled) {
+  outline: 2px dashed var(--accent);
+  outline-offset: 5px;
+  transform: translateY(-3px);
+}
+
+.device-list.dragging .row-main:not(:disabled) {
+  outline: 2px dashed var(--accent);
+  outline-offset: -5px;
+}
+
+/* The target wins over the "ready" look: solid ring, lifted and grown. */
+.orbit.dragging .device.drop-target button.avatar:not(:disabled) {
+  outline-style: solid;
+  transform: translateY(-3px) scale(1.06);
+}
+
+.device-list.dragging .device-row.drop-target .row-main:not(:disabled) {
+  outline-style: solid;
+}
+
 .device.drop-target .avatar {
   background: var(--accent);
   color: var(--accent-ink);
@@ -261,7 +305,10 @@ button.avatar:disabled:has(.ring) {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .device.drop-target .avatar {
+  .device.drop-target .avatar,
+  .orbit.dragging button.avatar:not(:disabled),
+  .orbit.dragging .device.drop-target button.avatar:not(:disabled),
+  .app.dragging::after {
     transform: none;
   }
 }
@@ -471,6 +518,20 @@ button.avatar:disabled:has(.ring) {
 }
 
 .primary:hover {
+  filter: brightness(1.05);
+}
+
+/* Destructive confirm (Stop sending): same shape as .primary, red. */
+.danger {
+  border: 0;
+  border-radius: var(--radius-control);
+  padding: 8px 16px;
+  font-weight: 600;
+  background: var(--bad);
+  color: #fff;
+}
+
+.danger:hover {
   filter: brightness(1.05);
 }
 
@@ -821,6 +882,17 @@ details .field {
     transition:
       background-color 140ms ease,
       box-shadow 140ms ease;
+  }
+  /* Drag feedback: strong ease-out so it answers the moment files arrive. */
+  .app::after {
+    transition:
+      opacity 200ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+  .orbit button.avatar {
+    transition:
+      background-color 140ms ease,
+      transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
   }
   .avatar.searching {
     animation: breathe 2.4s ease-in-out infinite;

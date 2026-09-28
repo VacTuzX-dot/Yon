@@ -16,6 +16,8 @@ interface Props {
   activity: Record<string, DeviceActivity | undefined>;
   /** Device id → when files were last sent to it (this session). */
   recent: Record<string, number>;
+  /** Files are being dragged over the window. */
+  dragging: boolean;
   /** Device under files being dragged over the window. */
   dropTarget: string | null;
   onPick: (d: Device) => void;
@@ -72,6 +74,7 @@ export default function DeviceOrbit({
   devices,
   activity,
   recent,
+  dragging,
   dropTarget,
   onPick,
   onCancel,
@@ -96,7 +99,7 @@ export default function DeviceOrbit({
 
   if (devices.length < LIST_FROM) {
     return (
-      <ul className="orbit" aria-label="Nearby devices">
+      <ul className={dragging ? "orbit dragging" : "orbit"} aria-label="Nearby devices">
         {[...ready, ...waiting].map((d) => {
           const a = activity[d.id];
           const st = statusOf(d, a);
@@ -175,7 +178,7 @@ export default function DeviceOrbit({
   };
 
   return (
-    <div className="device-list">
+    <div className={dragging ? "device-list dragging" : "device-list"}>
       <input
         type="search"
         className="device-search"

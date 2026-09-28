@@ -75,15 +75,18 @@ pub fn run() {
                 let css = |p: &tauri::PhysicalPosition<f64>| (p.x / scale, p.y / scale);
                 let app = window.app_handle();
                 match drop {
-                    tauri::DragDropEvent::Enter { position, .. }
-                    | tauri::DragDropEvent::Over { position } => {
-                        app::drop_hover(app, Some(css(position)));
+                    tauri::DragDropEvent::Enter { paths, position } => {
+                        let files = paths.iter().filter(|p| p.is_file()).count();
+                        app::drop_hover(app, Some(css(position)), Some(files));
+                    }
+                    tauri::DragDropEvent::Over { position } => {
+                        app::drop_hover(app, Some(css(position)), None);
                     }
                     tauri::DragDropEvent::Drop { paths, position } => {
-                        app::drop_hover(app, None);
+                        app::drop_hover(app, None, None);
                         app::dropped(app, paths.clone(), css(position));
                     }
-                    _ => app::drop_hover(app, None),
+                    _ => app::drop_hover(app, None, None),
                 }
                 return;
             }

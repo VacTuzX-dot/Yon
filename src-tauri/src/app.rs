@@ -1428,6 +1428,8 @@ pub fn open_paths(app: &AppHandle, paths: Vec<PathBuf>) {
 struct DropHoverDto {
     x: f64,
     y: f64,
+    /// Files (not folders) being dragged; sent when the drag enters.
+    files: Option<usize>,
 }
 
 #[derive(Serialize, Clone)]
@@ -1440,8 +1442,8 @@ struct DroppedDto {
 
 /// Files are being dragged over the window: tell the UI where (CSS px) so
 /// it can highlight the device under the pointer; `None` = drag left.
-pub fn drop_hover(app: &AppHandle, at: Option<(f64, f64)>) {
-    let _ = app.emit("drop-hover", at.map(|(x, y)| DropHoverDto { x, y }));
+pub fn drop_hover(app: &AppHandle, at: Option<(f64, f64)>, files: Option<usize>) {
+    let _ = app.emit("drop-hover", at.map(|(x, y)| DropHoverDto { x, y, files }));
 }
 
 /// Files dropped on the window: stash them (paths stay here) and let the UI
@@ -1453,6 +1455,9 @@ pub fn dropped(app: &AppHandle, paths: Vec<PathBuf>, (x, y): (f64, f64)) {
     if let Some(selection) = state.make_selection(paths) {
         let _ = app.emit("dropped", DroppedDto { selection, x, y });
     }
+    // WHY: the drop came from another app (Finder), which is still active;
+    // without this the first click on the confirm sheet only activates Yon.
+    show_main(app);
 }
 
 /// The UI asks for pending OS-shared files (on load, and on each "shared").

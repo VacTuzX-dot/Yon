@@ -25,6 +25,7 @@ import { LogoShapes } from "./components/Logo";
 import Ring from "./components/Ring";
 import SettingsSheet from "./components/SettingsSheet";
 import SharePicker from "./components/SharePicker";
+import StopSheet from "./components/StopSheet";
 import UpdateBar from "./components/UpdateBar";
 
 interface Outgoing {
@@ -53,8 +54,10 @@ export default function App() {
   const [confirm, setConfirm] = useState<{ device: Device; selection: Selection } | null>(null);
   const [shared, setShared] = useState<Selection | null>(null);
   const [pairing, setPairing] = useState(false);
+  /** Device whose send the user wants to stop; asks before cancelling. */
+  const [stopping, setStopping] = useState<Device | null>(null);
   /** Files are being dragged over the window; the device id under them, if any. */
-  const [dragging, setDragging] = useState<{ over: string | null } | null>(null);
+  const [dragging, setDragging] = useState<{ over: string | null; files: number } | null>(null);
   // Listeners are set up once; they read the latest device list from here.
   const devicesRef = useRef<Device[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -63,6 +66,22 @@ export default function App() {
   const [receiving, setReceiving] = useState<Receiving[]>([]);
   const [update, setUpdate] = useState<Update | null>(null);
   const timers = useRef(new Set<number>());
+  // WHY: a send that fails fast (device gone, connection refused) can emit
+  // its status and result before `api.send` has returned its id; keep them
+  // here until `sendTo` adds the entry, or the row sticks on "Connecting…".
+  const early = useRef(new Map<number, { status?: SendStatus; result?: SendOutcome }>());
+  const fadeLater = useCallback((id: number, result: SendOutcome) => {
+    // Good news fades; problems stay until the next try.
+    if (!["completed", "declined", "cancelled"].includes(result.outcome)) return;
+    const t = window.setTimeout(() => {
+      timers.current.delete(t);
+      setOutgoing((m) => {
+        const { [id]: _, ...rest } = m;
+        return rest;
+      });
+    }, NOTE_MS);
+    timers.current.add(t);
+  }, []);
 
   useEffect(() => {
     api.getState().then(setState, (e) => setFatal(errorText(e)));
@@ -78,7 +97,11 @@ export default function App() {
       return devicesRef.current.find((d) => d.id === el?.dataset.deviceId) ?? null;
     };
     const subs = [
-      on("drop-hover", (at) => setDragging(at ? { over: deviceAt(at.x, at.y)?.id ?? null } : null)),
+      on("drop-hover", (at) =>
+        setDragging((prev) =>
+          at ? { over: deviceAt(at.x, at.y)?.id ?? null, files: at.files ?? prev?.files ?? 0 } : null,
+        ),
+      ),
       // WHY: a drop is a deliberate gesture, but the send still goes through
       // the confirm sheet (or the picker when it missed a device).
       on("dropped", ({ selection, x, y }) => {
@@ -109,21 +132,19 @@ export default function App() {
         setReceiving((list) => list.map((r) => (r.id === f.id ? { ...r, finished: f } : r)));
       }),
       on("send-status", ({ id, status }) =>
-        setOutgoing((m) => (m[id] ? { ...m, [id]: { ...m[id], status } } : m)),
+        setOutgoing((m) => {
+          if (m[id]) return { ...m, [id]: { ...m[id], status } };
+          early.current.set(id, { ...early.current.get(id), status });
+          return m;
+        }),
       ),
       on("send-finished", ({ id, result }) => {
-        setOutgoing((m) => (m[id] ? { ...m, [id]: { ...m[id], result } } : m));
-        // Good news fades; problems stay until the next try.
-        if (["completed", "declined", "cancelled"].includes(result.outcome)) {
-          const t = window.setTimeout(() => {
-            timers.current.delete(t);
-            setOutgoing((m) => {
-              const { [id]: _, ...rest } = m;
-              return rest;
-            });
-          }, NOTE_MS);
-          timers.current.add(t);
-        }
+        setOutgoing((m) => {
+          if (m[id]) return { ...m, [id]: { ...m[id], result } };
+          early.current.set(id, { ...early.current.get(id), result });
+          return m;
+        });
+        fadeLater(id, result);
       }),
     ];
     return () => {
@@ -157,7 +178,16 @@ export default function App() {
         const rest = Object.fromEntries(
           Object.entries(m).filter(([, o]) => o.deviceId !== device.id),
         );
-        return { ...rest, [id]: { deviceId: device.id, status: { state: "connecting" } } };
+        const seen = early.current.get(id);
+        early.current.delete(id);
+        return {
+          ...rest,
+          [id]: {
+            deviceId: device.id,
+            status: seen?.status ?? { state: "connecting" },
+            result: seen?.result,
+          },
+        };
       });
     } catch (e) {
       setError(errorText(e));
@@ -185,6 +215,15 @@ export default function App() {
     [incoming],
   );
 
+  // A send that ends while "Stop sending?" is open clears the question, so it
+  // can't pop up again on the next send to that device.
+  const stoppingBusy =
+    stopping !== null &&
+    Object.values(outgoing).some((o) => o.deviceId === stopping.id && !o.result);
+  useEffect(() => {
+    if (stopping && !stoppingBusy) setStopping(null);
+  }, [stopping, stoppingBusy]);
+
   if (fatal) return <main className="app"><p className="hint bad">{fatal}</p></main>;
   if (!state) return <main className="app" />;
 
@@ -196,11 +235,11 @@ export default function App() {
   }
   const cancelFor = (d: Device) => {
     const entry = Object.entries(outgoing).find(([, o]) => o.deviceId === d.id && !o.result);
-    if (entry) api.cancelSend(Number(entry[0]));
+    if (entry) api.cancelSend(Number(entry[0])).catch((e) => setError(errorText(e)));
   };
 
   return (
-    <main className="app">
+    <main className={dragging ? "app dragging" : "app"}>
       <header>
         <span className="wordmark">
           <svg className="logo" viewBox="195 30 130 130" aria-hidden>
@@ -224,7 +263,9 @@ export default function App() {
       <section className="stage">
         <h1>
           {dragging
-            ? "Drop on a device to send"
+            ? dragging.files === 0
+              ? "Folders can't be sent yet. Drop files instead"
+              : `Drop ${dragging.files === 1 ? "the file" : `${dragging.files} files`} on a device`
             : devices.length
               ? "Choose a device, or drop files on it"
               : "Looking for devices nearby"}
@@ -233,9 +274,10 @@ export default function App() {
           devices={devices}
           activity={activity}
           recent={recent}
+          dragging={dragging !== null}
           dropTarget={dragging?.over ?? null}
           onPick={pickFor}
-          onCancel={cancelFor}
+          onCancel={setStopping}
           error={state.discovery_error}
         />
         {error && <p className="hint bad">{error}</p>}
@@ -317,6 +359,16 @@ export default function App() {
           selection={confirm.selection}
           onSend={send}
           onClose={closeConfirm}
+        />
+      )}
+      {stopping && stoppingBusy && (
+        <StopSheet
+          deviceName={stopping.name}
+          onStop={() => {
+            cancelFor(stopping);
+            setStopping(null);
+          }}
+          onClose={() => setStopping(null)}
         />
       )}
       {pairing && (

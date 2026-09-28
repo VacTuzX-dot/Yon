@@ -192,7 +192,7 @@ export interface Events {
   "remote-status": RemoteStatus;
   "settings-changed": Settings;
   /** Files dragged over the window (CSS px); null when the drag leaves. */
-  "drop-hover": { x: number; y: number } | null;
+  "drop-hover": { x: number; y: number; files: number | null } | null;
   /** Files dropped on the window; paths stay in Rust. */
   dropped: { selection: Selection; x: number; y: number };
 }
