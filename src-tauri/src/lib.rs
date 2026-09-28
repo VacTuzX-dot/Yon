@@ -68,6 +68,25 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            if let tauri::WindowEvent::DragDrop(drop) = event {
+                // WHY: handled here so dropped paths stay in Rust; the UI
+                // only learns where they landed (CSS px) and gets an id.
+                let scale = window.scale_factor().unwrap_or(1.0);
+                let css = |p: &tauri::PhysicalPosition<f64>| (p.x / scale, p.y / scale);
+                let app = window.app_handle();
+                match drop {
+                    tauri::DragDropEvent::Enter { position, .. }
+                    | tauri::DragDropEvent::Over { position } => {
+                        app::drop_hover(app, Some(css(position)));
+                    }
+                    tauri::DragDropEvent::Drop { paths, position } => {
+                        app::drop_hover(app, None);
+                        app::dropped(app, paths.clone(), css(position));
+                    }
+                    _ => app::drop_hover(app, None),
+                }
+                return;
+            }
             // WHY: keep Yon running (and able to receive) when the window is
             // closed — ⌘W / red button on macOS, X on Windows if enabled.
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

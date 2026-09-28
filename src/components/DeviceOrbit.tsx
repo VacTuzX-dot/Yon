@@ -16,6 +16,8 @@ interface Props {
   activity: Record<string, DeviceActivity | undefined>;
   /** Device id → when files were last sent to it (this session). */
   recent: Record<string, number>;
+  /** Device under files being dragged over the window. */
+  dropTarget: string | null;
   onPick: (d: Device) => void;
   onCancel: (d: Device) => void;
   error: string | null;
@@ -66,7 +68,15 @@ function statusOf(d: Device, a: DeviceActivity | undefined): { text: string; ton
   return { text: osName(d) };
 }
 
-export default function DeviceOrbit({ devices, activity, recent, onPick, onCancel, error }: Props) {
+export default function DeviceOrbit({
+  devices,
+  activity,
+  recent,
+  dropTarget,
+  onPick,
+  onCancel,
+  error,
+}: Props) {
   const [query, setQuery] = useState("");
   if (error) return <p className="hint bad">{error}</p>;
 
@@ -75,7 +85,7 @@ export default function DeviceOrbit({ devices, activity, recent, onPick, onCance
       <div className="orbit">
         <div className="device">
           <span className="avatar searching" aria-hidden />
-          <p className="hint">Open Yon on another device on this Wi-Fi.</p>
+          <p className="hint">Open Yon on another computer on this Wi-Fi, or pair a phone.</p>
         </div>
       </div>
     );
@@ -91,7 +101,11 @@ export default function DeviceOrbit({ devices, activity, recent, onPick, onCance
           const a = activity[d.id];
           const st = statusOf(d, a);
           return (
-            <li key={d.id} className="device">
+            <li
+              key={d.id}
+              className={`device${dropTarget === d.id ? " drop-target" : ""}`}
+              data-device-id={d.id}
+            >
               <button
                 type="button"
                 className="avatar"
@@ -127,7 +141,11 @@ export default function DeviceOrbit({ devices, activity, recent, onPick, onCance
     const a = activity[d.id];
     const st = statusOf(d, a);
     return (
-      <li key={d.id} className="device-row">
+      <li
+        key={d.id}
+        className={`device-row${dropTarget === d.id ? " drop-target" : ""}`}
+        data-device-id={d.id}
+      >
         <button
           type="button"
           className="row-main"

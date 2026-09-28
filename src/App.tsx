@@ -20,6 +20,7 @@ import {
 import ConfirmSheet from "./components/ConfirmSheet";
 import DeviceOrbit, { initials, type DeviceActivity } from "./components/DeviceOrbit";
 import IncomingDialog from "./components/IncomingDialog";
+import PairPhoneSheet from "./components/PairPhoneSheet";
 import { LogoShapes } from "./components/Logo";
 import Ring from "./components/Ring";
 import SettingsSheet from "./components/SettingsSheet";
@@ -51,6 +52,11 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ device: Device; selection: Selection } | null>(null);
   const [shared, setShared] = useState<Selection | null>(null);
+  const [pairing, setPairing] = useState(false);
+  /** Files are being dragged over the window; the device id under them, if any. */
+  const [dragging, setDragging] = useState<{ over: string | null } | null>(null);
+  // Listeners are set up once; they read the latest device list from here.
+  const devicesRef = useRef<Device[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [incoming, setIncoming] = useState<Incoming | null>(null);
   const [outgoing, setOutgoing] = useState<Record<number, Outgoing>>({});
@@ -66,7 +72,21 @@ export default function App() {
         if (sel) setShared(sel);
       });
     takeShared();
+    /** The device drawn at (x, y) in CSS px, if any. */
+    const deviceAt = (x: number, y: number) => {
+      const el = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-device-id]");
+      return devicesRef.current.find((d) => d.id === el?.dataset.deviceId) ?? null;
+    };
     const subs = [
+      on("drop-hover", (at) => setDragging(at ? { over: deviceAt(at.x, at.y)?.id ?? null } : null)),
+      // WHY: a drop is a deliberate gesture, but the send still goes through
+      // the confirm sheet (or the picker when it missed a device).
+      on("dropped", ({ selection, x, y }) => {
+        setDragging(null);
+        const device = deviceAt(x, y);
+        if (device?.compatible) setConfirm({ device, selection });
+        else setShared(selection);
+      }),
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
       on("phones-online", (online_phones) => setState((s) => (s ? { ...s, online_phones } : s))),
       on("incoming", (req) => setIncoming(req)),
@@ -169,6 +189,7 @@ export default function App() {
   if (!state) return <main className="app" />;
 
   const devices = allDevices(state);
+  devicesRef.current = devices;
   const activity: Record<string, DeviceActivity> = {};
   for (const o of Object.values(outgoing)) {
     activity[o.deviceId] = toActivity(o);
@@ -201,16 +222,26 @@ export default function App() {
       </header>
 
       <section className="stage">
-        <h1>{devices.length ? "Choose a device to send to" : "Looking for devices nearby"}</h1>
+        <h1>
+          {dragging
+            ? "Drop on a device to send"
+            : devices.length
+              ? "Choose a device, or drop files on it"
+              : "Looking for devices nearby"}
+        </h1>
         <DeviceOrbit
           devices={devices}
           activity={activity}
           recent={recent}
+          dropTarget={dragging?.over ?? null}
           onPick={pickFor}
           onCancel={cancelFor}
           error={state.discovery_error}
         />
         {error && <p className="hint bad">{error}</p>}
+        <button type="button" className="quiet pair-button" onClick={() => setPairing(true)}>
+          Pair a phone
+        </button>
       </section>
 
       {receiving.length > 0 && (
@@ -286,6 +317,14 @@ export default function App() {
           selection={confirm.selection}
           onSend={send}
           onClose={closeConfirm}
+        />
+      )}
+      {pairing && (
+        <PairPhoneSheet
+          online={state.online_phones}
+          phones={state.settings.phones}
+          onPaired={(settings) => setState((s) => (s ? { ...s, settings } : s))}
+          onClose={() => setPairing(false)}
         />
       )}
       {settingsOpen && (

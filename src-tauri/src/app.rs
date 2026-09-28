@@ -1424,6 +1424,37 @@ pub fn open_paths(app: &AppHandle, paths: Vec<PathBuf>) {
     show_main(app);
 }
 
+#[derive(Serialize, Clone)]
+struct DropHoverDto {
+    x: f64,
+    y: f64,
+}
+
+#[derive(Serialize, Clone)]
+struct DroppedDto {
+    selection: SelectionDto,
+    /// Where the files were dropped, in CSS pixels of the window.
+    x: f64,
+    y: f64,
+}
+
+/// Files are being dragged over the window: tell the UI where (CSS px) so
+/// it can highlight the device under the pointer; `None` = drag left.
+pub fn drop_hover(app: &AppHandle, at: Option<(f64, f64)>) {
+    let _ = app.emit("drop-hover", at.map(|(x, y)| DropHoverDto { x, y }));
+}
+
+/// Files dropped on the window: stash them (paths stay here) and let the UI
+/// ask for confirmation, for the device under the drop point if any.
+pub fn dropped(app: &AppHandle, paths: Vec<PathBuf>, (x, y): (f64, f64)) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    if let Some(selection) = state.make_selection(paths) {
+        let _ = app.emit("dropped", DroppedDto { selection, x, y });
+    }
+}
+
 /// The UI asks for pending OS-shared files (on load, and on each "shared").
 #[tauri::command]
 pub fn take_shared(state: State<'_, AppState>) -> Option<SelectionDto> {

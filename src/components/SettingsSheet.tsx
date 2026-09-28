@@ -12,10 +12,13 @@ interface Props {
   onClose: () => void;
 }
 
+/** Every change saves on its own (fields when they lose focus), so there is
+ *  one way out — Done — and nothing typed is ever lost by closing. */
 export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   const [name, setName] = useState(state.settings.device_name);
   const [port, setPort] = useState(String(state.settings.port));
+  const [basicsError, setBasicsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pairing, setPairing] = useState<{ replace?: { id: string; name: string } } | null>(null);
   const [relayError, setRelayError] = useState<string | null>(null);
@@ -23,61 +26,30 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
   const [relayUrl, setRelayUrl] = useState(state.settings.relay_url);
   useEffect(() => ref.current?.showModal(), []);
 
-  async function save(e: FormEvent) {
-    e.preventDefault();
-    setError(null);
+  /** Save name and port if they changed. Returns false when they're invalid. */
+  async function saveBasics(): Promise<boolean> {
+    if (name.trim() === state.settings.device_name && Number(port) === state.settings.port) {
+      return true;
+    }
+    setBasicsError(null);
     try {
       onChange(await api.updateSettings(name, Number(port)));
-      onClose();
+      return true;
     } catch (err) {
-      setError(errorText(err));
+      setBasicsError(errorText(err));
+      return false;
     }
   }
 
-  async function toggleDock(enabled: boolean) {
-    setError(null);
-    try {
-      const settings = await api.setShowInDock(enabled);
-      onChange({ ...state, settings });
-    } catch (err) {
-      setError(errorText(err));
-    }
+  async function close() {
+    if (await saveBasics()) onClose();
   }
 
-  async function toggleTray(enabled: boolean) {
+  /** Run a setting that saves at once, and show its result or error. */
+  async function run(action: () => Promise<AppState["settings"]>) {
     setError(null);
     try {
-      const settings = await api.setCloseToTray(enabled);
-      onChange({ ...state, settings });
-    } catch (err) {
-      setError(errorText(err));
-    }
-  }
-
-  async function forget(id: string) {
-    setError(null);
-    try {
-      const settings = await api.untrust(id);
-      onChange({ ...state, settings });
-    } catch (err) {
-      setError(errorText(err));
-    }
-  }
-
-  async function unpair(id: string) {
-    setError(null);
-    try {
-      const settings = await api.unpairPhone(id);
-      onChange({ ...state, settings });
-    } catch (err) {
-      setError(errorText(err));
-    }
-  }
-
-  async function setRemote(enabled: boolean) {
-    setError(null);
-    try {
-      const settings = await api.setRemote(enabled, state.settings.relay_url);
+      const settings = await action();
       onChange({ ...state, settings });
     } catch (err) {
       setError(errorText(err));
@@ -98,16 +70,6 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
     }
   }
 
-  async function toggleUpdates(enabled: boolean) {
-    setError(null);
-    try {
-      const settings = await api.setCheckUpdates(enabled);
-      onChange({ ...state, settings });
-    } catch (err) {
-      setError(errorText(err));
-    }
-  }
-
   async function checkNow() {
     setError(null);
     setChecking("busy");
@@ -125,15 +87,8 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
     }
   }
 
-  async function changeFolder() {
-    setError(null);
-    try {
-      const settings = await api.pickSaveDir();
-      onChange({ ...state, settings });
-    } catch (err) {
-      setError(errorText(err));
-    }
-  }
+  const phones = state.settings.phones.filter((p) => !p.pending);
+  const relay = state.settings.effective_relay;
 
   return (
     <dialog
@@ -142,102 +97,127 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
       aria-labelledby="settings-title"
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        void close();
       }}
     >
-      <form onSubmit={save}>
+      <form
+        onSubmit={(e: FormEvent) => {
+          e.preventDefault();
+          void saveBasics();
+        }}
+      >
         <h2 id="settings-title">Settings</h2>
-        <label className="field">
-          <span>Device name</span>
-          <input value={name} maxLength={63} onChange={(e) => setName(e.target.value)} />
-        </label>
-        <div className="field">
-          <span>Save files to</span>
-          <div className="folder">
-            <span className="path" title={state.settings.save_dir}>
-              {state.settings.save_dir}
-            </span>
-            <button type="button" className="quiet" onClick={changeFolder}>
-              Change
-            </button>
-          </div>
-        </div>
-        {isMac && (
-          <label className="toggle">
+
+        <section className="group" aria-labelledby="g-computer">
+          <h3 id="g-computer">This computer</h3>
+          <label className="field">
+            <span>Name other devices see</span>
             <input
-              type="checkbox"
-              checked={state.settings.show_in_dock}
-              onChange={(e) => toggleDock(e.target.checked)}
+              value={name}
+              maxLength={63}
+              onChange={(e) => setName(e.target.value)}
+              onBlur={() => void saveBasics()}
             />
-            <span>
-              Show Yon in the Dock
-              <span className="hint">When off, Yon lives in the menu bar only.</span>
-            </span>
           </label>
-        )}
-        {!isMac && (
-          <label className="toggle">
-            <input
-              type="checkbox"
-              checked={state.settings.close_to_tray}
-              onChange={(e) => toggleTray(e.target.checked)}
-            />
-            <span>
-              Keep running in the tray when closed
-              <span className="hint">So nearby devices can still send you files.</span>
-            </span>
-          </label>
-        )}
-        <div className="field">
-          <span>Accept automatically from</span>
-          {state.settings.trusted.length === 0 ? (
-            <p className="hint">
-              No devices yet. Tick "Always accept from this device" when someone sends you files.
-            </p>
+          {basicsError && <p className="hint bad">{basicsError}</p>}
+          {isMac ? (
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={state.settings.show_in_dock}
+                onChange={(e) => run(() => api.setShowInDock(e.target.checked))}
+              />
+              <span>
+                Show Yon in the Dock
+                <span className="hint">When off, Yon lives in the menu bar only.</span>
+              </span>
+            </label>
           ) : (
-            <ul className="trusted">
-              {state.settings.trusted.map((t) => (
-                <li key={t.id}>
-                  <span className="file-name">{t.name}</span>
-                  <button type="button" className="link" onClick={() => forget(t.id)}>
-                    Remove
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={state.settings.close_to_tray}
+                onChange={(e) => run(() => api.setCloseToTray(e.target.checked))}
+              />
+              <span>
+                Keep running in the tray when closed
+                <span className="hint">So nearby devices can still send you files.</span>
+              </span>
+            </label>
           )}
-        </div>
-        <div className="field">
-          <span>Phones</span>
-          {state.settings.phones.every((p) => p.pending) ? (
-            <p className="hint">Send photos from your phone to this computer. No app needed.</p>
-          ) : (
-            <ul className="trusted">
-              {state.settings.phones
-                .filter((p) => !p.pending)
-                .map((p) => (
-                  <li key={p.id}>
-                    <span className="file-name">
-                      {p.name}
-                      {p.note === "home_only" && <span className="hint"> Home Wi-Fi only</span>}
-                      {p.note === "needs_remote" && (
-                        <span className="hint"> Needs Reach from anywhere</span>
-                      )}
-                    </span>
-                    {p.note === "home_only" && (
-                      <button
-                        type="button"
-                        className="link"
-                        onClick={() => setPairing({ replace: { id: p.id, name: p.name } })}
-                      >
-                        Pair again
-                      </button>
-                    )}
-                    <button type="button" className="link" onClick={() => unpair(p.id)}>
+          <p className="hint">
+            Device code <span className="code">{state.me.short_fingerprint}</span>. People sending to
+            you can check it matches.
+          </p>
+        </section>
+
+        <section className="group" aria-labelledby="g-receiving">
+          <h3 id="g-receiving">Receiving</h3>
+          <div className="field">
+            <span>Save files to</span>
+            <div className="folder">
+              <span className="path" title={state.settings.save_dir}>
+                {state.settings.save_dir}
+              </span>
+              <button type="button" className="quiet" onClick={() => run(api.pickSaveDir)}>
+                Change
+              </button>
+            </div>
+          </div>
+          <div className="field">
+            <span>Accept without asking</span>
+            {state.settings.trusted.length === 0 ? (
+              <p className="hint">
+                No devices yet. Tick "Always accept from this device" when someone sends you files.
+              </p>
+            ) : (
+              <ul className="trusted">
+                {state.settings.trusted.map((t) => (
+                  <li key={t.id}>
+                    <span className="file-name">{t.name}</span>
+                    <button type="button" className="link" onClick={() => run(() => api.untrust(t.id))}>
                       Remove
                     </button>
                   </li>
                 ))}
+              </ul>
+            )}
+          </div>
+        </section>
+
+        <section className="group" aria-labelledby="g-phones">
+          <h3 id="g-phones">Phones</h3>
+          {phones.length === 0 ? (
+            <p className="hint">Send photos from your phone to this computer. No app needed.</p>
+          ) : (
+            <ul className="trusted">
+              {phones.map((p) => (
+                <li key={p.id}>
+                  <span className="file-name">
+                    {p.name}
+                    {p.note === "home_only" && <span className="hint"> Home Wi-Fi only</span>}
+                    {p.note === "needs_remote" && (
+                      <span className="hint"> Needs Reach from anywhere</span>
+                    )}
+                  </span>
+                  {p.note === "home_only" && (
+                    <button
+                      type="button"
+                      className="link"
+                      onClick={() => setPairing({ replace: { id: p.id, name: p.name } })}
+                    >
+                      Pair again
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="link"
+                    onClick={() => run(() => api.unpairPhone(p.id))}
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
           {state.settings.link_error && <p className="hint bad">{state.settings.link_error}</p>}
@@ -245,30 +225,40 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
             <input
               type="checkbox"
               checked={state.settings.remote}
-              disabled={!state.settings.remote && !state.settings.effective_relay}
-              onChange={(e) => setRemote(e.target.checked)}
+              disabled={!state.settings.remote && !relay}
+              onChange={(e) => run(() => api.setRemote(e.target.checked, state.settings.relay_url))}
             />
             <span>
               Reach from anywhere
               <span className="hint">
-                {state.settings.effective_relay
-                  ? `Through ${hostOf(state.settings.effective_relay)}. It passes on encrypted data only; it can see internet addresses, when devices connect and how much they send.`
+                {relay
+                  ? `Phones connect on any network, through ${hostOf(relay)}. Files stay encrypted.`
                   : "Add a relay address under Advanced to turn this on."}
               </span>
             </span>
           </label>
+          {relay && (
+            <details className="more">
+              <summary>What the relay can see</summary>
+              <p className="hint">
+                Internet addresses, when devices connect, and how much they send. Never the files
+                or their names.
+              </p>
+            </details>
+          )}
           {state.settings.remote && <RemoteLine status={state.settings.remote_status} />}
           <button type="button" className="quiet pair-button" onClick={() => setPairing({})}>
             Pair a phone
           </button>
-        </div>
-        <div className="field">
-          <span>Updates</span>
+        </section>
+
+        <section className="group" aria-labelledby="g-updates">
+          <h3 id="g-updates">Updates</h3>
           <label className="toggle">
             <input
               type="checkbox"
               checked={state.settings.check_updates}
-              onChange={(e) => toggleUpdates(e.target.checked)}
+              onChange={(e) => run(() => api.setCheckUpdates(e.target.checked))}
             />
             <span>
               Check for updates automatically
@@ -285,8 +275,9 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
               {checking === "busy" ? "Checking…" : "Check now"}
             </button>
           </div>
-        </div>
-        <details>
+        </section>
+
+        <details className="group">
           <summary>Advanced</summary>
           <label className="field">
             <span>Port</span>
@@ -296,6 +287,7 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
               max={65535}
               value={port}
               onChange={(e) => setPort(e.target.value)}
+              onBlur={() => void saveBasics()}
             />
           </label>
           <p className="hint">
@@ -323,17 +315,11 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
                 : "Required to turn on Reach from anywhere.")}
           </p>
         </details>
-        <p className="hint">
-          Your device code is <span className="code">{state.me.short_fingerprint}</span>. People
-          sending to you can check it matches.
-        </p>
+
         {error && <p className="hint bad">{error}</p>}
         <div className="actions">
-          <button type="button" className="quiet" onClick={onClose}>
-            Close
-          </button>
-          <button type="submit" className="primary">
-            Save
+          <button type="button" className="primary" onClick={() => void close()}>
+            Done
           </button>
         </div>
       </form>

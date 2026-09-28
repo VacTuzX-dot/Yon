@@ -247,6 +247,25 @@ button.avatar:disabled:has(.ring) {
   color: var(--bad);
 }
 
+/* ---------- drag and drop: the device under the files ---------- */
+
+.device.drop-target .avatar {
+  background: var(--accent);
+  color: var(--accent-ink);
+  transform: scale(1.06);
+}
+
+.device-row.drop-target .row-main {
+  background: var(--avatar);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .device.drop-target .avatar {
+    transform: none;
+  }
+}
+
 /* ---------- device icons ---------- */
 
 .device-icon {
@@ -758,6 +777,35 @@ details .field {
   margin: 10px 0 6px;
 }
 
+/* Settings: one titled group per topic, divided by a rule. */
+.sheet .group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.sheet .group h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.sheet details.group > summary {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.more summary {
+  font-size: 13px;
+}
+
+.more .hint {
+  margin-top: 6px;
+}
+
 /* ---------- motion ---------- */
 
 @media (prefers-reduced-motion: no-preference) {
@@ -768,6 +816,11 @@ details .field {
   }
   button.avatar:active:not(:disabled) {
     transform: scale(0.96);
+  }
+  .row-main {
+    transition:
+      background-color 140ms ease,
+      box-shadow 140ms ease;
   }
   .avatar.searching {
     animation: breathe 2.4s ease-in-out infinite;

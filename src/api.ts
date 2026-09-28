@@ -191,6 +191,10 @@ export interface Events {
   "update-progress": { done: number; total: number | null };
   "remote-status": RemoteStatus;
   "settings-changed": Settings;
+  /** Files dragged over the window (CSS px); null when the drag leaves. */
+  "drop-hover": { x: number; y: number } | null;
+  /** Files dropped on the window; paths stay in Rust. */
+  dropped: { selection: Selection; x: number; y: number };
 }
 
 export function on<K extends keyof Events>(
