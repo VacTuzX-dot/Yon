@@ -42,7 +42,7 @@ test("ready first, recent first, then by name; closed phones wait", () => {
     ],
     { r: 2, "phone:2": 1 },
   );
-  expect(ready.map((d) => d.id)).toEqual(["r", "phone:2", "a", "old", "z"]);
+  expect(ready.map((d) => d.id)).toEqual(["r", "phone:2", "a", "z", "old"]);
   expect(waiting.map((d) => d.id)).toEqual(["phone:1"]);
 });
 

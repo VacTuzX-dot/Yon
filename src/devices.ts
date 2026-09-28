@@ -50,8 +50,9 @@ export function labels(devices: Device[]): Record<string, string> {
   return out;
 }
 
-/** Ready devices first, then phones that need Yon opened. Inside each group:
- *  most recently sent to first, then by name. */
+/** Ready devices first (ones that need a newer Yon at the end, so they
+ *  never sit between usable ones), then phones that need Yon opened.
+ *  Inside each: most recently sent to first, then by name. */
 export function group(
   devices: Device[],
   recent: Record<string, number>,
@@ -61,7 +62,7 @@ export function group(
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   const sorted = [...devices].sort(byUse);
   return {
-    ready: sorted.filter((d) => isReady(d) || !d.compatible),
+    ready: [...sorted.filter(isReady), ...sorted.filter((d) => !d.compatible)],
     waiting: sorted.filter((d) => d.compatible && !isReady(d)),
   };
 }
