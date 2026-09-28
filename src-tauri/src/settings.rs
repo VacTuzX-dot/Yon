@@ -116,9 +116,9 @@ impl Settings {
                 if crate::protocol::unhex::<32>(&s.room_secret).is_none() {
                     s.room_secret.clear();
                 }
-                if validate_relay_url(&s.relay_url).is_err() {
-                    s.relay_url.clear();
-                }
+                // Stored normalized, so an override saved by an older
+                // version compares equal to the same relay spelled now.
+                s.relay_url = validate_relay_url(&s.relay_url).unwrap_or_default();
                 s
             }
             Err(e) => {
@@ -188,20 +188,22 @@ pub fn validate_name(raw: &str) -> Result<String, &'static str> {
 }
 
 /// `wss://host[:port]`, or `ws://` for a relay on this machine (testing).
-/// Empty means "not set".
+/// Empty means "not set". Returns the normalized form (lowercase, no
+/// trailing `/`, no default port) so equal relays compare equal.
 pub fn validate_relay_url(raw: &str) -> Result<String, &'static str> {
-    let url = raw.trim().trim_end_matches('/');
+    let lower = raw.trim().to_ascii_lowercase();
+    let url = lower.trim_end_matches('/');
     if url.is_empty() {
         return Ok(String::new());
     }
-    let rest = if let Some(r) = url.strip_prefix("wss://") {
-        r
+    let (scheme, rest, default_port) = if let Some(r) = url.strip_prefix("wss://") {
+        ("wss://", r, 443)
     } else if let Some(r) = url.strip_prefix("ws://") {
         let host = r.split([':', '/']).next().unwrap_or("");
         if !matches!(host, "localhost" | "127.0.0.1") {
             return Err("Use a wss:// address (ws:// only for a relay on this computer)");
         }
-        r
+        ("ws://", r, 80)
     } else {
         return Err("The relay address starts with wss://");
     };
@@ -214,10 +216,18 @@ pub fn validate_relay_url(raw: &str) -> Result<String, &'static str> {
         && host
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
-    if !host_ok || !port.is_none_or(|p| p.parse::<u16>().is_ok()) || url.len() > 200 {
+    let port = match port.map(str::parse::<u16>) {
+        None => None,
+        Some(Ok(p)) => Some(p),
+        Some(Err(_)) => return Err("That isn't a valid relay address"),
+    };
+    if !host_ok || url.len() > 200 {
         return Err("That isn't a valid relay address");
     }
-    Ok(url.to_string())
+    Ok(match port {
+        Some(p) if p != default_port => format!("{scheme}{host}:{p}"),
+        _ => format!("{scheme}{host}"),
+    })
 }
 
 pub fn validate_port(port: u16) -> Result<u16, &'static str> {
@@ -291,6 +301,53 @@ mod tests {
         assert!(validate_relay_url("wss://r.example.com?x=1").is_err());
         assert!(validate_relay_url("wss://r.example.com:99999").is_err());
         assert!(validate_relay_url("wss://[::1]:8787").is_err());
+    }
+
+    #[test]
+    fn relay_url_canonical_forms() {
+        for raw in [
+            "WSS://Relay.Example.com",
+            "wss://relay.example.com/",
+            "wss://relay.example.com:443",
+            " wss://relay.example.com ",
+        ] {
+            assert_eq!(
+                validate_relay_url(raw),
+                Ok("wss://relay.example.com".into()),
+                "{raw}"
+            );
+        }
+        assert_eq!(
+            validate_relay_url("wss://relay.example.com:8443"),
+            Ok("wss://relay.example.com:8443".into())
+        );
+        assert_eq!(
+            validate_relay_url("WS://LOCALHOST:80"),
+            Ok("ws://localhost".into())
+        );
+        assert_eq!(
+            validate_relay_url("ws://localhost:8787"),
+            Ok("ws://localhost:8787".into())
+        );
+        // A default port only drops for its own scheme.
+        assert_eq!(
+            validate_relay_url("wss://relay.example.com:80"),
+            Ok("wss://relay.example.com:80".into())
+        );
+    }
+
+    #[test]
+    fn load_normalizes_relay_url() {
+        let dir = temp_dir("settings-relay");
+        let dl = Path::new("/d");
+        let mut s = Settings::defaults(dl);
+        s.relay_url = "WSS://Relay.Example.com:443/".into();
+        s.save(&dir).unwrap();
+        assert_eq!(
+            Settings::load(&dir, dl).relay_url,
+            "wss://relay.example.com"
+        );
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
