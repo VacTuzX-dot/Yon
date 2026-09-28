@@ -5,6 +5,7 @@
   },
   "bundle": {
     "macOS": {
+      "signingIdentity": "-",
       "files": {
         "PlugIns/YonShare.appex": "./target/yonshare/YonShare.appex"
       }
