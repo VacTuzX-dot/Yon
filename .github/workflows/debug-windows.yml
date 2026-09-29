@@ -5,7 +5,7 @@ on:
   push:
     branches: ['debug/windows-tauri-hang']
 permissions:
-  contents: read
+  contents: write
 jobs:
   probe:
     strategy:
@@ -34,6 +34,7 @@ jobs:
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         timeout-minutes: 20
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ matrix.signing == 'with-key' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ matrix.signing == 'with-key' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
           YON_DEFAULT_RELAY: ${{ vars.YON_DEFAULT_RELAY }}
@@ -41,3 +42,9 @@ jobs:
           tauriScript: bun tauri
           args: --bundles nsis
           uploadUpdaterJson: false
+          releaseName: Yon probe
+          releaseBody: |
+            ## Download
+            `curl -fsSL https://example.invalid/install.sh | bash`
+          releaseDraft: true
+          prerelease: false
