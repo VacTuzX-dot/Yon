@@ -1,9 +1,15 @@
+/* The film fills the screen (16:9, letterboxed) and plays by itself. Controls
+   fade away while it plays; the door in the corner is always there. */
 :root {
-  --bg: #13151b;
+  --bg: #101218;
   --ink: #eceef2;
-  --muted: #979eae;
-  --line: #323741;
+  --muted: #a29d92;
+  --line: #2e313a;
   --accent: #f2b53a;
+  --accent-strong: #8a5f00;
+  --shu: #e5594b;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "Noto Serif Thai", Georgia, serif;
   color-scheme: dark;
 }
 
@@ -11,55 +17,65 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
+  overflow: hidden;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans Thai", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
   color: var(--accent);
 }
 
-.top,
-main {
-  width: min(1200px, 100% - 32px);
-  margin-inline: auto;
-}
-
-.top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 18px 0;
-}
-
-.top a {
-  color: var(--ink);
-  text-decoration: none;
-  font-weight: 600;
-}
-
-.mark {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 20px;
-}
-
-.film:focus-visible {
+a:focus-visible,
+button:focus-visible,
+input:focus-visible {
   outline: 2px solid var(--accent);
-  outline-offset: 4px;
+  outline-offset: 3px;
+}
+
+.sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.nojs {
+  position: fixed;
+  inset: auto 0 40% 0;
+  text-align: center;
+}
+
+.film {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.film.idle {
+  cursor: none;
 }
 
 .frame {
   position: relative;
+  width: min(100vw, calc(100dvh * 16 / 9));
   aspect-ratio: 16 / 9;
-  border-radius: 16px;
-  overflow: hidden;
-  background: #121419;
-  border: 1px solid var(--line);
+  background: var(--bg);
 }
 
 .frame canvas {
@@ -82,41 +98,442 @@ main {
   display: grid;
 }
 
-.film.no-gl .controls {
+.film.no-gl .bar,
+.film.no-gl .film-start,
+.film.no-gl .sound-pill {
   display: none;
 }
 
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 12px 2px;
+.rotate {
+  display: none;
+  position: absolute;
+  top: calc(100% + 18px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
 }
 
-.film-play {
-  min-width: 96px;
-  padding: 8px 16px;
-  border: 0;
+@media (orientation: portrait) {
+  .rotate {
+    display: block;
+  }
+}
+
+svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.75;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The door: skip to the site. Its label shows for the first few seconds,
+   and whenever it is hovered or focused; the shoji door swings open. */
+.door {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  right: max(12px, env(safe-area-inset-right));
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 10px 0 12px;
+  border: 1px solid rgb(255 255 255 / 0.16);
   border-radius: 999px;
-  background: var(--accent);
-  color: #1e222b;
-  font: inherit;
-  font-weight: 650;
+  background: rgb(16 18 24 / 0.55);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 0.3s, background 0.2s, transform 0.15s var(--ease-out);
+}
+
+.door:hover,
+.door:focus-visible {
+  opacity: 1;
+  background: rgb(16 18 24 / 0.8);
+}
+
+.door:active {
+  transform: scale(0.94);
+}
+
+.door-label {
+  max-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  transition: max-width 0.35s var(--ease-out), margin 0.35s var(--ease-out);
+}
+
+.door:hover .door-label,
+.door:focus-visible .door-label,
+.film.hint .door-label {
+  max-width: 140px;
+  margin-right: 8px;
+}
+
+.film.idle .door {
+  opacity: 0.4;
+}
+
+.film.hint .door {
+  opacity: 1;
+}
+
+.door .glow {
+  fill: var(--accent);
+  stroke: none;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.door .open,
+.door .shut {
+  transition: opacity 0.2s;
+}
+
+.door .open {
+  opacity: 0;
+}
+
+.door:hover .open,
+.door:focus-visible .open {
+  opacity: 1;
+}
+
+.door:hover .shut,
+.door:focus-visible .shut {
+  opacity: 0;
+}
+
+.door:hover .glow,
+.door:focus-visible .glow {
+  opacity: 0.9;
+}
+
+/* Controls bar */
+.bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 32px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: linear-gradient(transparent, rgb(0 0 0 / 0.6));
+  transition: opacity 0.35s;
+}
+
+.film.idle .bar,
+.film.gate .bar,
+.film.ended .bar {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ibtn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink);
   cursor: pointer;
+  transition: background 0.2s, transform 0.15s var(--ease-out);
+}
+
+.ibtn:hover {
+  background: rgb(255 255 255 / 0.14);
+}
+
+.ibtn:active {
+  transform: scale(0.9);
+}
+
+.film-play .i-play,
+.film.playing .film-play .i-pause {
+  display: block;
+}
+
+.film-play .i-pause,
+.film.playing .film-play .i-play {
+  display: none;
+}
+
+.film-sound .i-off,
+.film.muted .film-sound .i-on,
+.film.no-sound .film-sound .i-on {
+  display: none;
+}
+
+.film.muted .film-sound .i-off,
+.film.no-sound .film-sound .i-off {
+  display: block;
 }
 
 .film-seek {
   flex: 1;
+  min-width: 0;
+  height: 44px;
+  margin: 0 6px;
+  background: none;
   accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .film-time {
+  flex: none;
+  color: rgb(236 238 242 / 0.8);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  color: var(--muted);
-  font-size: 14px;
 }
 
-.about {
+@media (max-width: 520px) {
+  .film-time {
+    display: none;
+  }
+}
+
+/* Buttons: the same keys as the site */
+.sound-pill,
+.film-start,
+.primary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 4px 0 var(--accent-strong);
+  color: #1d1b18;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  transition: transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
+}
+
+.sound-pill:hover,
+.film-start:hover,
+.primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 0 var(--accent-strong);
+}
+
+.sound-pill:active,
+.film-start:active,
+.primary:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--accent-strong);
+}
+
+.sound-pill {
+  position: absolute;
+  top: max(12px, env(safe-area-inset-top));
+  left: max(12px, env(safe-area-inset-left));
+  display: none;
+}
+
+.film.no-sound .sound-pill {
+  display: inline-flex;
+}
+
+.film-start {
+  position: absolute;
+  display: none;
+  min-height: 60px;
+  padding: 0 32px;
+  font-size: 18px;
+}
+
+.film.gate .film-start {
+  display: inline-flex;
+}
+
+.film-start svg {
+  fill: currentColor;
+  stroke: none;
+}
+
+/* End card */
+.end {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgb(16 18 24 / 0.72);
+  backdrop-filter: blur(10px);
+}
+
+.end[hidden] {
+  display: none;
+}
+
+.end-card {
+  display: grid;
+  justify-items: center;
+  gap: 14px;
+  width: min(400px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 28px 24px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgb(27 29 36 / 0.9);
+  text-align: center;
+}
+
+.end-card h2 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.end-card p {
+  margin: 0;
   color: var(--muted);
-  font-size: 14px;
+}
+
+.seal {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  background: var(--shu);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 18px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 3px var(--shu), inset 0 0 0 4.5px rgb(255 255 255 / 0.75);
+  transform: rotate(-6deg);
+}
+
+.primary {
+  width: 100%;
+}
+
+.end-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  width: 100%;
+}
+
+.ghost {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 0 12px;
+  border: 1px solid rgb(255 255 255 / 0.2);
+  border-radius: 999px;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s var(--ease-out);
+}
+
+.ghost:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.ghost:active {
+  transform: scale(0.96);
+}
+
+.end-link {
+  padding: 8px;
+  font-size: 15px;
+}
+
+.end-card .end-note {
+  font-size: 13px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .end:not([hidden]) {
+    animation: fade 0.5s ease-out both;
+  }
+
+  .end:not([hidden]) .end-card > * {
+    animation: rise 0.5s var(--ease-out) both;
+  }
+
+  .end-card > :nth-child(2) {
+    animation-delay: 60ms;
+  }
+
+  .end-card > :nth-child(3) {
+    animation-delay: 110ms;
+  }
+
+  .end-card > :nth-child(4) {
+    animation-delay: 160ms;
+  }
+
+  .end-card > :nth-child(5) {
+    animation-delay: 210ms;
+  }
+
+  .end-card > :nth-child(n + 6) {
+    animation-delay: 260ms;
+  }
+
+  .end:not([hidden]) .seal {
+    animation: stamp 0.5s 0.15s var(--ease-out) both;
+  }
+
+  .film.no-sound .sound-pill {
+    animation: pulse 2.4s ease-in-out infinite;
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+
+  @keyframes stamp {
+    from {
+      opacity: 0;
+      transform: rotate(-6deg) scale(1.9);
+    }
+    60% {
+      opacity: 1;
+      transform: rotate(-6deg) scale(0.94);
+    }
+  }
+
+  @keyframes pulse {
+    50% {
+      transform: translateY(-2px);
+    }
+  }
 }

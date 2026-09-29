@@ -17,6 +17,8 @@ const TYPES: Record<string, string> = {
   js: "text/javascript; charset=utf-8",
   json: "application/json; charset=utf-8",
   txt: "text/plain; charset=utf-8",
+  xml: "application/xml; charset=utf-8",
+  jpg: "image/jpeg",
   svg: "image/svg+xml; charset=utf-8",
   png: "image/png",
   ico: "image/x-icon",
@@ -118,9 +120,23 @@ export function handle(site: Site, req: Request): Response {
   const file = site.files.get(path);
   if (!file) return text(path, 404, "Not Found\n", head);
 
-  const extra = { "Content-Type": file.type, "Content-Length": String(file.body.length), ETag: file.etag };
+  const extra = { "Content-Type": file.type, "Content-Length": String(file.body.length), ETag: file.etag, "Accept-Ranges": "bytes" };
   if (req.headers.get("If-None-Match") === file.etag) {
     return new Response(null, { status: 304, headers: headers(path, { ETag: file.etag }) });
+  }
+  // WHY: Safari won't play audio or video from a server that ignores Range, and
+  // seeking needs it everywhere. One "bytes=a-b" range is all a media element asks for.
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("Range") ?? "");
+  if (range && (range[1] || range[2])) {
+    const size = file.body.length;
+    const a = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2])); // "-N": the last N bytes
+    const b = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (a >= size || a > b) {
+      return new Response(null, { status: 416, headers: headers(path, { "Content-Range": `bytes */${size}` }) });
+    }
+    const part = file.body.subarray(a, b + 1);
+    const h = headers(path, { ...extra, "Content-Length": String(part.length), "Content-Range": `bytes ${a}-${b}/${size}` });
+    return new Response(head ? null : part, { status: 206, headers: h });
   }
   return new Response(head ? null : file.body, { status: 200, headers: headers(path, extra) });
 }

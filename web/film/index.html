@@ -2,35 +2,100 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Yon in 72 seconds</title>
     <meta name="description" content="How Yon tosses files between your devices, in a 72-second film drawn live with WebGL." />
+    <meta name="theme-color" content="#101218" />
+    <link rel="canonical" href="https://yon.meo.in.th/film/" />
+    <meta property="og:type" content="video.other" />
+    <meta property="og:site_name" content="Yon" />
+    <meta property="og:title" content="Yon in 72 seconds" />
+    <meta property="og:description" content="How Yon tosses files between your devices, in a 72-second film drawn live with WebGL." />
+    <meta property="og:url" content="https://yon.meo.in.th/film/" />
+    <meta property="og:image" content="https://yon.meo.in.th/og.jpg" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoObject",
+        "name": "Yon in 72 seconds",
+        "description": "How Yon finds nearby devices, sends files and folders straight between them, and pairs a phone, in a 72-second film drawn live with WebGL.",
+        "thumbnailUrl": "https://yon.meo.in.th/og.jpg",
+        "uploadDate": "2026-09-29",
+        "duration": "PT1M12S",
+        "embedUrl": "https://yon.meo.in.th/film/"
+      }
+    </script>
     <link rel="icon" href="../icon.png" />
     <link rel="stylesheet" href="film.css" />
     <script src="film.js" defer></script>
   </head>
   <body>
-    <header class="top">
-      <a class="mark" href="../"><img src="../icon.png" alt="" width="28" height="28" />Yon</a>
-      <a href="../">Back to yon.meo.in.th</a>
-    </header>
-    <main>
-      <div class="film" tabindex="0" aria-label="Yon in 72 seconds, a film">
-        <div class="frame">
-          <canvas class="film-gl" aria-hidden="true"></canvas>
-          <canvas class="film-cap" aria-hidden="true"></canvas>
-          <p class="film-fallback">This film needs WebGL. <a href="https://github.com/VacTuzX-dot/Yon">Read about Yon on GitHub</a> instead.</p>
-        </div>
-        <div class="controls">
-          <button type="button" class="film-play" aria-label="Play">Play</button>
-          <input class="film-seek" type="range" min="0" max="72" step="0.01" value="0" aria-label="Position in the film" />
-          <span class="film-time">0:00 / 1:12</span>
-        </div>
+    <h1 class="sr">Yon in 72 seconds</h1>
+    <p class="sr">
+      A film about Yon, the free open-source app for sending files between Macs, Windows PCs and phones. It
+      shows Yon finding nearby devices, sending a file as sealed chunks that are checked on arrival, sending a
+      whole folder, pairing a phone with a QR code, and the open-source code behind it.
+      <a href="../">Go to the Yon site</a>.
+    </p>
+    <div class="film hint" aria-label="Yon in 72 seconds, a film">
+      <div class="frame">
+        <canvas class="film-gl" aria-hidden="true"></canvas>
+        <canvas class="film-cap" aria-hidden="true"></canvas>
+        <p class="film-fallback">This film needs WebGL. <a href="../">Read about Yon</a> instead.</p>
+        <p class="rotate">Turn your phone sideways for a bigger picture.</p>
       </div>
-      <p class="about">
-        Drawn live in your browser with WebGL; the music is algorithmic, made by a Python script. Both are in
-        <a href="https://github.com/VacTuzX-dot/Yon">the repository</a>.
-      </p>
-    </main>
+
+      <a class="door" href="../" aria-label="Skip the film and go to the Yon site">
+        <span class="door-label">Skip to site</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <rect class="glow" x="5" y="3" width="14" height="18" rx="1" />
+          <g class="shut"><rect x="5" y="3" width="14" height="18" rx="1" /><path d="M12 3v18M5 9h14M5 15h14" /></g>
+          <g class="open"><rect x="5" y="3" width="14" height="18" rx="1" /><path d="M5 3l7 2.5v13L5 21z" /><path d="M8.5 9v6" /></g>
+        </svg>
+      </a>
+
+      <button type="button" class="sound-pill">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4z" /><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11" /></svg>
+        Tap for sound
+      </button>
+
+      <button type="button" class="film-start">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" /></svg>
+        Play film
+      </button>
+
+      <div class="bar">
+        <button type="button" class="ibtn film-play" aria-label="Pause">
+          <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg>
+          <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l11-6.5z" /></svg>
+        </button>
+        <input class="film-seek" type="range" min="0" max="72" step="0.01" value="0" aria-label="Position in the film" />
+        <span class="film-time">0:00 / 1:12</span>
+        <button type="button" class="ibtn film-sound" aria-label="Mute">
+          <svg class="i-on" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4z" /><path d="M16.5 9a4 4 0 0 1 0 6M19 6.5a7.5 7.5 0 0 1 0 11" /></svg>
+          <svg class="i-off" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9.5v5h4l5 4v-13l-5 4z" /><path d="M17 9.5l4 5M21 9.5l-4 5" /></svg>
+        </button>
+        <button type="button" class="ibtn film-full" aria-label="Full screen">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" /></svg>
+        </button>
+      </div>
+
+      <section class="end" aria-label="What next" hidden>
+        <div class="end-card">
+          <div class="seal" aria-hidden="true">โยน</div>
+          <h2>That's Yon.</h2>
+          <p>Free and open source. No account, no cloud. For macOS and Windows.</p>
+          <a class="primary" href="../#download">Download Yon</a>
+          <div class="end-row">
+            <button type="button" class="ghost film-again">Watch again</button>
+            <a class="ghost" href="../">Explore the site</a>
+          </div>
+          <a class="end-link" href="https://github.com/VacTuzX-dot/Yon">Source on GitHub</a>
+          <p class="end-note">Drawn live in your browser with WebGL. The music is algorithmic, made by a Python script.</p>
+        </div>
+      </section>
+    </div>
+    <noscript><p class="nojs">The film needs JavaScript. <a href="../">Go to the Yon site</a>.</p></noscript>
   </body>
 </html>

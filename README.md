@@ -4,7 +4,7 @@
 
 # Yon
 
-Toss files to nearby devices. The name comes from the Thai word "โยน" (to toss).
+Toss files to nearby devices. The name comes from the Thai word "โยน" (to toss). Website and download: [yon.meo.in.th](https://yon.meo.in.th/).
 
 Yon is a small, open-source desktop app for sending files between computers on the same network: macOS and Windows today. No account, no cloud. Files go straight from one device to the other, encrypted.
 

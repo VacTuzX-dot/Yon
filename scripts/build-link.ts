@@ -40,9 +40,9 @@ const csp =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
   "connect-src wss: ws://localhost:* ws://127.0.0.1:*; base-uri 'none'; form-action 'none'";
 const html = (await Bun.file("web/link.html").text())
-  .replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />`)
+  .replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="robots" content="noindex" />`)
   .replace('<script src="link.js" defer></script>', `<script src="link.js" integrity="${sri}" defer></script>`);
-if (!html.includes(sri) || !html.includes("Content-Security-Policy")) throw new Error("site page not patched");
+if (!html.includes(sri) || !html.includes("Content-Security-Policy") || !html.includes("noindex")) throw new Error("site page not patched");
 const icon = Bun.file("src-tauri/icons/128x128@2x.png");
 await Bun.write(`${phone}/index.html`, html);
 await Bun.write(`${phone}/link.js`, js);
@@ -58,6 +58,17 @@ const home = (await Bun.file("web/home/index.html").text())
   .replaceAll("__VERSION__", version);
 if (home.includes("__")) throw new Error("home page has an unfilled placeholder");
 await Bun.write(`${site}/index.html`, home);
+// Search engines: what to crawl, and the two pages worth listing. The phone
+// page is noindex (it is a tool, not a destination).
+await Bun.write(`${site}/og.jpg`, Bun.file("web/home/og.jpg"));
+await Bun.write(`${site}/robots.txt`, `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
+const day = new Date().toISOString().slice(0, 10);
+await Bun.write(
+  `${site}/sitemap.xml`,
+  `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
+    [`${SITE}/`, `${SITE}/film/`].map((u) => `  <url><loc>${u}</loc><lastmod>${day}</lastmod></url>\n`).join("") +
+    `</urlset>\n`,
+);
 // The film (web/film/): plain WebGL + an algorithmic soundtrack.
 for (const f of ["index.html", "film.css", "film.mp3"]) await Bun.write(`${site}/film/${f}`, Bun.file(`web/film/${f}`));
 const film = await Bun.build({ entrypoints: ["web/film/film.ts"], outdir: `${site}/film`, naming: "film.js", target: "browser", minify: true });
@@ -83,6 +94,7 @@ await Bun.write(
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-HASH'; base-uri 'none'" />
 <meta name="referrer" content="no-referrer" />
 <title>Yon has moved</title>
+<link rel="canonical" href="${SITE}/" />
 <p>Yon's phone page has moved to <a href="${SITE}/phonelink/">${SITE.replace("https://", "")}/phonelink</a>.</p>
 <script>SCRIPT</script>
 `,

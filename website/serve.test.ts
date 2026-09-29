@@ -204,3 +204,29 @@ test("ETag revalidation returns 304", async () => {
   expect(again.status).toBe(304);
   expect(again.headers.get("x-frame-options")).toBe("DENY");
 });
+
+test("Range: 206 with Content-Range, suffix ranges, 416 out of bounds, full body without Range", async () => {
+  const full = await fetch(`${base}/toss.wav`);
+  expect(full.headers.get("accept-ranges")).toBe("bytes");
+  expect(full.status).toBe(200);
+
+  const mid = await fetch(`${base}/toss.wav`, { headers: { Range: "bytes=1-2" } });
+  expect(mid.status).toBe(206);
+  expect(mid.headers.get("content-range")).toBe("bytes 1-2/4");
+  expect(mid.headers.get("content-length")).toBe("2");
+  expect(new Uint8Array(await mid.arrayBuffer())).toEqual(new Uint8Array([0x49, 0x46]));
+  expect(mid.headers.get("content-security-policy")).toBe(CSP_SITE);
+
+  const open = await fetch(`${base}/toss.wav`, { headers: { Range: "bytes=2-" } });
+  expect(open.headers.get("content-range")).toBe("bytes 2-3/4");
+
+  const tail = await fetch(`${base}/toss.wav`, { headers: { Range: "bytes=-1" } });
+  expect(tail.headers.get("content-range")).toBe("bytes 3-3/4");
+
+  const past = await fetch(`${base}/toss.wav`, { headers: { Range: "bytes=9-" } });
+  expect(past.status).toBe(416);
+  expect(past.headers.get("content-range")).toBe("bytes */4");
+
+  const junk = await fetch(`${base}/toss.wav`, { headers: { Range: "bytes=0-1,3-3" } });
+  expect(junk.status).toBe(200); // multi-range: ignored, the whole file is valid
+});

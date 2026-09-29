@@ -164,3 +164,6 @@ document.addEventListener("click", (e) => {
     petals(at.x, at.y, 12);
   }
 });
+
+// The film's last screen links here: yon.meo.in.th/#download opens the dialog.
+if (dialog && dialog.showModal && location.hash === "#download") openDialog(document.querySelector("a.button[data-download]"));

@@ -985,3 +985,18 @@ dialog .petal {
 .facts + p {
   margin-top: 18px;
 }
+
+.faq {
+  margin: 0 0 16px;
+  max-width: 38em;
+}
+
+.faq dt {
+  margin-top: 16px;
+  font-weight: 700;
+}
+
+.faq dd {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
