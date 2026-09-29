@@ -8,7 +8,9 @@ Toss files to nearby devices. The name comes from the Thai word "โยน" (to 
 
 Yon is a small, open-source desktop app for sending files between computers on the same network: macOS and Windows today. No account, no cloud. Files go straight from one device to the other, encrypted.
 
-> Screenshots coming soon.
+[![Yon in 72 seconds: click to watch the film](docs/yon-film.jpg)](https://yon.meo.in.th/film/)
+
+<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ Watch "Yon in 72 seconds"</b></a> (a WebGL film with an algorithmic soundtrack, made from code in this repo)</p>
 
 ## What it does
 
@@ -23,7 +25,7 @@ Yon is a small, open-source desktop app for sending files between computers on t
 
 ## Install
 
-Download the latest build from [Releases](https://github.com/VacTuzX-dot/Yon/releases).
+Download from [yon.meo.in.th](https://yon.meo.in.th/) (pick Mac or Windows and the file downloads straight away), or take the latest build from [Releases](https://github.com/VacTuzX-dot/Yon/releases).
 
 | Platform | File |
 |---|---|

@@ -49,7 +49,15 @@ await Bun.write(`${phone}/link.js`, js);
 await Bun.write(`${phone}/link.css`, Bun.file("web/link.css"));
 await Bun.write(`${phone}/icon.png`, icon);
 
-for (const f of ["index.html", "home.css", "home.js", "toss.wav"]) await Bun.write(`${site}/${f}`, Bun.file(`web/home/${f}`));
+for (const f of ["home.css", "home.js", "toss.wav"]) await Bun.write(`${site}/${f}`, Bun.file(`web/home/${f}`));
+// The download dialog links straight to this version's release files (the
+// tag must match package.json, which release.yml checks).
+const { version } = await Bun.file("package.json").json();
+const home = (await Bun.file("web/home/index.html").text())
+  .replaceAll("__BASE__", `https://github.com/VacTuzX-dot/Yon/releases/download/v${version}`)
+  .replaceAll("__VERSION__", version);
+if (home.includes("__")) throw new Error("home page has an unfilled placeholder");
+await Bun.write(`${site}/index.html`, home);
 // The film (web/film/): plain WebGL + an algorithmic soundtrack.
 for (const f of ["index.html", "film.css", "film.mp3"]) await Bun.write(`${site}/film/${f}`, Bun.file(`web/film/${f}`));
 const film = await Bun.build({ entrypoints: ["web/film/film.ts"], outdir: `${site}/film`, naming: "film.js", target: "browser", minify: true });

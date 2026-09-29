@@ -24,7 +24,7 @@
           device to the other, encrypted, with no account and no cloud.
         </p>
         <div class="cta">
-          <a class="button" href="https://github.com/VacTuzX-dot/Yon/releases/latest">Download Yon</a>
+          <a class="button" data-download href="https://github.com/VacTuzX-dot/Yon/releases/latest">Download Yon</a>
           <a class="watch" href="film/">Watch how it works (1:12)</a>
           <span class="note">macOS and Windows · free and open source (MIT)</span>
         </div>
@@ -68,9 +68,8 @@
       <section>
         <h2>Download</h2>
         <p>
-          Every release has a table of direct links for Apple Silicon and Intel Macs, and for
-          Windows on x64 and ARM: <a href="https://github.com/VacTuzX-dot/Yon/releases/latest">latest release</a>.
-          Yon updates itself after that.
+          <a data-download href="https://github.com/VacTuzX-dot/Yon/releases/latest">Download Yon __VERSION__</a>
+          for your Mac or PC. Yon updates itself after that.
         </p>
         <p>On a Mac you can also install from Terminal, which skips the first-open warning:</p>
         <pre><code>curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash</code></pre>
@@ -110,5 +109,32 @@
       <a href="https://github.com/VacTuzX-dot/Yon">Source on GitHub</a> ·
       <a href="https://github.com/VacTuzX-dot/Yon/blob/main/CHANGELOG.md">Changelog</a> · MIT license
     </footer>
+
+    <dialog id="download" aria-labelledby="download-title">
+      <div class="dl-head">
+        <h2 id="download-title">Download Yon __VERSION__</h2>
+        <button type="button" class="dl-close" aria-label="Close">×</button>
+      </div>
+      <p class="dl-pick">Which computer?</p>
+      <div class="dl-os" role="group" aria-label="Operating system">
+        <button type="button" data-os="mac" aria-pressed="false">Mac</button>
+        <button type="button" data-os="win" aria-pressed="false">Windows</button>
+      </div>
+      <div class="dl-list" data-list="mac" hidden>
+        <a href="__BASE__/Yon___VERSION___aarch64.dmg">Apple Silicon <span>M1 and newer · .dmg</span></a>
+        <a href="__BASE__/Yon___VERSION___x64.dmg">Intel <span>.dmg</span></a>
+        <p class="note">Or from Terminal, which skips the first-open warning:</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash</code></pre>
+      </div>
+      <div class="dl-list" data-list="win" hidden>
+        <a href="__BASE__/Yon___VERSION___x64-setup.exe">Intel or AMD <span>x64 · installer</span></a>
+        <a href="__BASE__/Yon___VERSION___arm64-setup.exe">ARM <span>Snapdragon and other ARM64 · installer</span></a>
+      </div>
+      <p class="note dl-foot">
+        Not notarized or signed yet: macOS asks you to allow it in Privacy &amp; Security; Windows,
+        More info → Run anyway.
+        <a href="__BASE__/SHA256SUMS.txt">Checksums</a>
+      </p>
+    </dialog>
   </body>
 </html>
