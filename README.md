@@ -54,7 +54,7 @@ The [script](install.sh) downloads the latest release, checks it against the rel
 irm https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.ps1 | iex
 ```
 
-The [script](install.ps1) downloads the installer for your PC (x64 or ARM64), checks it against the release's `SHA256SUMS.txt` and runs it (per user, no admin). Set `$env:YON_VERSION = "0.2.3"` first for a specific version, or `$env:YON_SILENT = "1"` to skip the installer's window. It trusts GitHub as much as the installer download does. Read it first: some ad blockers (uBlock Origin) warn about pasted `irm ... | iex` commands because scammers use the same trick, and that instinct is right. The website doesn't offer this command for that reason.
+The [script](install.ps1) downloads the installer for your PC (x64 or ARM64), checks it against the release's `SHA256SUMS.txt` and runs it (per user, no admin). Set `$env:YON_VERSION = "0.2.3"` first for a specific version, or `$env:YON_SILENT = "1"` to skip the installer's window. It trusts GitHub as much as the installer download does; read it first if you like.
 
 **Windows, from the installer:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
 

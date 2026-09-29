@@ -469,6 +469,10 @@ p {
   user-select: none;
 }
 
+.code.ps pre::before {
+  content: "PS> ";
+}
+
 .c-cmd {
   color: var(--accent-strong);
   font-weight: 700;
