@@ -1,5 +1,5 @@
 # TEMPORARY: reproduce the v0.2.3 Windows release hang (tauri build prints
-# nothing for 6 h). Delete this branch once found.
+# nothing for 6 h). Same step as release.yml minus the release. Delete after.
 name: Debug Windows tauri build
 on:
   push:
@@ -8,6 +8,10 @@ permissions:
   contents: read
 jobs:
   probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        signing: [with-key, no-key]
     runs-on: windows-latest
     timeout-minutes: 30
     steps:
@@ -21,13 +25,12 @@ jobs:
         with:
           toolchain: stable
       - run: bun install --frozen-lockfile
-      - name: tauri --version
-        timeout-minutes: 3
-        run: bun tauri --version
-      - name: tauri info
-        timeout-minutes: 5
-        run: bun tauri info
-      - name: tauri build (verbose, unsigned, no bundle)
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
         timeout-minutes: 20
-        shell: bash
-        run: bun tauri build --no-bundle -vv 2>&1 | head -200
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ matrix.signing == 'with-key' && secrets.TAURI_SIGNING_PRIVATE_KEY || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ matrix.signing == 'with-key' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '' }}
+        with:
+          tauriScript: bun tauri
+          args: --bundles nsis --verbose
+          uploadUpdaterJson: false
