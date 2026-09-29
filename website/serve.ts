@@ -18,6 +18,7 @@ const TYPES: Record<string, string> = {
   json: "application/json; charset=utf-8",
   txt: "text/plain; charset=utf-8",
   xml: "application/xml; charset=utf-8",
+  ps1: "text/plain; charset=utf-8", // shown, never run by the browser
   jpg: "image/jpeg",
   svg: "image/svg+xml; charset=utf-8",
   png: "image/png",
@@ -81,6 +82,9 @@ export function loadSite(dir: string): Site {
       const etag = `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`;
       const entry = { body, type, etag };
       files.set(url + name, entry);
+      // The PowerShell installer is also served at /pwsh, short enough to type:
+      // irm https://yon.meo.in.th/pwsh | iex
+      if (url + name === "/pwsh.ps1") files.set("/pwsh", entry);
       if (name === "index.html") {
         files.set(url, entry); // "/" and "/phonelink/"
         if (url !== "/") redirects.set(url.slice(0, -1), url); // "/phonelink" → "/phonelink/"

@@ -1,6 +1,6 @@
 # Install Yon on Windows (x64 or ARM64) from GitHub Releases.
 #
-#   irm https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.ps1 | iex
+#   irm https://yon.meo.in.th/pwsh | iex
 #
 # Options (environment variables, set before running):
 #   $env:YON_VERSION = "0.2.3"   install this version instead of the latest
