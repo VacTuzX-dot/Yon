@@ -2,92 +2,102 @@
   <img src="src-tauri/icons/128x128@2x.png" width="96" alt="Yon icon">
 </p>
 
-# Yon
+<h1 align="center">Yon</h1>
 
-Toss files to nearby devices. The name comes from the Thai word "โยน" (to toss). Website and download: [yon.meo.in.th](https://yon.meo.in.th/).
+<p align="center">Toss files to nearby devices.</p>
 
-Yon is a small, open-source desktop app for sending files between computers on the same network: macOS and Windows today. No account, no cloud. Files go straight from one device to the other, encrypted.
+<p align="center">
+  <a href="https://yon.meo.in.th/">Website</a> ·
+  <a href="https://yon.meo.in.th/film/">Film</a> ·
+  <a href="https://github.com/VacTuzX-dot/Yon/releases">Releases</a> ·
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+Yon (โยน, Thai for "to toss") sends files and folders between your Macs, Windows PCs and phones. No account, no cloud. Files go straight from one device to the other, encrypted. Free and open source (MIT).
 
 [![Yon in 72 seconds: click to watch the film](docs/yon-film.jpg)](https://yon.meo.in.th/film/)
 
-<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ Watch "Yon in 72 seconds"</b></a> (a WebGL film with an algorithmic soundtrack, made from code in this repo)</p>
+<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ Watch "Yon in 72 seconds"</b></a><br>A WebGL film with an algorithmic soundtrack, made from code in this repo.</p>
 
-## What it does
+## Updates
 
-- Finds other Yon devices on your Wi-Fi automatically.
-- Tap a device, pick files, send. Folders too: drop one on a device or choose **Send a folder…** from the device's ⋯ menu; it arrives as a new folder with everything inside. The other side sees who is sending, the file list and total size, and chooses Accept or Decline.
-- Progress on both sides, with Cancel on both sides.
-- Large files are streamed, so a 1 GB file uses a few MB of memory, and every file is checked with SHA-256 when it arrives.
-- Received files go to `Downloads/Yon` (you can change this). Existing files are never overwritten: you get `photo (1).jpg` instead.
-- Send from your file manager: on Windows, right-click → **Send to → Yon**; on macOS, use **Share → Yon** (from Finder or any app), **Open With → Yon**, or drop files on Yon's Dock icon. Yon asks which device to send to.
-- Send files between your phones and computers with **Yon Link**, no app to install on the phone (see below).
-- Stays ready in the background: on macOS, closing the window (⌘W) keeps Yon in the menu bar; on Windows, closing sends it to the tray (turn this off in Settings). On macOS you can also hide the Dock icon in Settings to keep Yon in the menu bar only. Quit from the menu bar / tray icon, or ⌘Q on macOS.
+- **2026-09-29:** Yon 0.2.3. Send folders, Intel Macs, Windows on ARM, an Activity list, smaller notifications and security fixes. [Changelog](CHANGELOG.md)
+- **2026-09-29:** [yon.meo.in.th](https://yon.meo.in.th/) is live, with a download button and the film.
+
+## Features
+
+- **Finds devices by itself.** Other Yon devices on your Wi-Fi show up automatically.
+- **Files and folders.** Pick a device, pick files, send. To send a folder, drop it on a device or choose **Send a folder…** in the device's ⋯ menu. It arrives as a new folder with everything inside.
+- **You decide what arrives.** The other side sees who is sending, the file list and the total size, then chooses **Accept** or **Decline**. Both sides see progress and can cancel.
+- **Big files are fine.** Files are streamed, so 1 GB uses a few MB of memory. Every file is checked with SHA-256 when it arrives.
+- **Nothing gets overwritten.** Files go to `Downloads/Yon` (you can change this). A name that already exists becomes `photo (1).jpg`.
+- **Send from your file manager.** Windows: right-click → **Send to → Yon**. macOS: **Share → Yon**, **Open With → Yon**, or drop files on Yon's Dock icon.
+- **Phones, no app.** Send between phones and computers with [Yon Link](docs/yon-link.md).
+- **Stays in the background.** macOS: closing the window (⌘W) keeps Yon in the menu bar, and you can hide the Dock icon in Settings. Windows: closing sends it to the tray (turn this off in Settings). Quit from the menu bar or tray icon, or ⌘Q on macOS.
 
 ## Install
 
-Download from [yon.meo.in.th](https://yon.meo.in.th/) (pick Mac or Windows and the file downloads straight away), or take the latest build from [Releases](https://github.com/VacTuzX-dot/Yon/releases).
+Download from [yon.meo.in.th](https://yon.meo.in.th/): pick Mac or Windows and the file downloads straight away. Or take a build from [Releases](https://github.com/VacTuzX-dot/Yon/releases), where each release starts with a table of direct links.
 
-| Platform | File |
+| Your computer | File |
 |---|---|
-| macOS (Apple Silicon: M1 and newer) | `Yon_x.y.z_aarch64.dmg` |
-| macOS (Intel) | `Yon_x.y.z_x64.dmg` (0.2.3 and newer) |
-| Windows (x64: Intel or AMD) | `Yon_x.y.z_x64-setup.exe` |
-| Windows on ARM (Snapdragon) | `Yon_x.y.z_arm64-setup.exe` (0.2.3 and newer) |
+| Mac, Apple Silicon (M1 and newer) | `Yon_x.y.z_aarch64.dmg` |
+| Mac, Intel (0.2.3 and newer) | `Yon_x.y.z_x64.dmg` |
+| Windows, x64 (Intel or AMD) | `Yon_x.y.z_x64-setup.exe` |
+| Windows on ARM, Snapdragon (0.2.3 and newer) | `Yon_x.y.z_arm64-setup.exe` |
 
-Each release page starts with a table of direct download links. 32-bit Windows isn't supported.
+32-bit Windows isn't supported. The builds aren't notarized by Apple or signed for Windows yet, so your OS warns you the first time you open Yon. What changed in each version, and known problems with their fixes: [CHANGELOG](CHANGELOG.md).
 
-The builds aren't notarized by Apple or signed for Windows, so your OS warns you the first time. What changed in each version, and known problems with their fixes: [CHANGELOG](CHANGELOG.md).
+### macOS
 
-**macOS, from Terminal (skips the warning):**
+**From Terminal (skips the first-open warning):**
 
 ```bash
 curl -fsSL https://yon.meo.in.th/mac | bash
 ```
 
-The [script](install.sh) (the website serves that same file at `/mac`; you can also run it from `https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh`) downloads the latest release, checks it against the release's `SHA256SUMS.txt` and the app's code signature, and puts Yon in `/Applications`, without `sudo`. Files fetched this way aren't marked as downloaded, so macOS opens Yon straight away. It trusts GitHub as much as the DMG does; read it first if you like. Run it again any time to reinstall.
+The [script](install.sh) downloads the latest release, checks it against the release's `SHA256SUMS.txt` and the app's code signature, and puts Yon in `/Applications`, without `sudo`. Files fetched this way aren't marked as downloaded, so macOS opens Yon straight away. It trusts GitHub as much as the DMG does; read it first if you like. Run it again any time to reinstall. The website serves the same file at `/mac`, and it also runs from `https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh`.
 
-**macOS, from the DMG:** open the `.dmg`, drag Yon to Applications and open it. macOS says it "could not verify" Yon: open System Settings → Privacy & Security and click **Open Anyway**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
+**From the DMG:**
 
-**Windows, from PowerShell (advanced):** the installer above is the main way. If you'd rather use a script, download it, read it, then run it. The website doesn't offer this as a one-line command: pasting a remote script straight into PowerShell is how scams work, and ad blockers such as uBlock Origin warn about it.
+1. Open the `.dmg` and drag Yon to Applications.
+2. Open Yon. If macOS says it "could not verify" Yon, open System Settings → Privacy & Security and click **Open Anyway**. You only need to do this once.
+3. When asked, allow Yon to find devices on your local network.
+4. Optional, for **Share → Yon**: turn Yon on in System Settings → General → Login Items & Extensions → Sharing. macOS keeps new share extensions off until you do. Unsigned builds may not offer the Share extension at all; Open With always works.
+
+### Windows
+
+1. Run the installer.
+2. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**.
+3. When Windows Firewall asks, allow Yon on **Private networks**.
+
+<details>
+<summary>Install from PowerShell (advanced)</summary>
+
+The installer above is the main way. If you'd rather use a script, download it, read it, then run it. The website doesn't offer this as a one-line command: pasting a remote script straight into PowerShell is how scams work, and ad blockers such as uBlock Origin warn about it.
 
 ```powershell
 Invoke-WebRequest https://yon.meo.in.th/pwsh -OutFile "$env:TEMP\yon-install.ps1"
 notepad "$env:TEMP\yon-install.ps1"
 ```
 
-The [script](install.ps1) (the website serves that same file at `/pwsh`) downloads the installer for your PC (x64 or ARM64) from this repository's GitHub release, checks its SHA-256 against the release's `SHA256SUMS.txt` (it catches a broken or swapped download, not a compromised release), and runs it, per user, no admin. The installer itself isn't code-signed yet, and the script doesn't check a signature. Windows PCs block script files by default, and you decide how to run this one. For a single run that changes nothing else:
+The [script](install.ps1) downloads the installer for your PC (x64 or ARM64) from this repository's GitHub release, checks its SHA-256 against the release's `SHA256SUMS.txt`, and runs it, per user, no admin. The check catches a broken or swapped download, not a compromised release. The installer itself isn't code-signed yet, and the script doesn't check a signature.
+
+Windows PCs block script files by default, and you decide how to run this one. For a single run that changes nothing else:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\yon-install.ps1"
 ```
 
-Set `$env:YON_VERSION = "0.2.3"` first for a specific version, or `$env:YON_SILENT = "1"` to skip the installer's window.
+Set `$env:YON_VERSION = "0.2.3"` first for a specific version, or `$env:YON_SILENT = "1"` to skip the installer's window. The website serves the same file at `/pwsh`.
 
-**Windows, from the installer:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
+</details>
 
-### Updates
+### Update Yon
 
-Yon checks GitHub Releases for a new version shortly after it starts and every few hours. When one is out, a bar at the bottom of the window says so: click **Update** and Yon downloads it, installs it over the old version and reopens. Files left behind by earlier updates are cleaned up on the next start. Updating from 0.2.0 (any OS), or from 0.2.1 on macOS, needs one extra step; see the [CHANGELOG](CHANGELOG.md). You can turn automatic checks off, or check by hand, in **Settings → Updates**.
+Yon checks GitHub Releases for a new version shortly after it starts and every few hours. When one is out, a bar at the bottom of the window says so. Click **Update** and Yon downloads it, installs it over the old version and reopens.
 
-### Phones (Yon Link)
-
-iPhone and Android phones send photos and files to your computer through a small web page that Yon serves on your Wi-Fi. There's nothing to install from an app store.
-
-1. On the computer: **Settings → Phones → Pair a phone**, give the phone a name, and a QR code appears.
-2. On the phone: open the Camera, scan the code, and tap the link. The phone must be on the same Wi-Fi.
-3. Tap Share → **Add to Home Screen** (Android: menu ⋮ → Add to Home screen).
-
-From then on, tap the Yon icon on your phone:
-
-- **Phone → computer:** choose photos or files, then accept on the computer.
-- **Computer → phone:** your paired phones show up next to other computers in Yon. Pick one, choose files, and tap Receive on the phone (its Yon page has to be open, or opened within 10 minutes). In Safari the files go to Files → Downloads; from the Home Screen icon, tap Save on each file, then Share → Save to Files (or Save Image/Video for photos and videos). Up to 1 GB at a time.
-- **Phone → phone:** when another paired phone has its Yon page open, it appears under "Send to". The computer passes the files along (Yon must be running there) and the other phone taps Receive.
-
-You only scan once. If the link doesn't open (some Android phones can't use `.local` names), tap "Link doesn't open?" under the QR code for a code that uses the computer's IP address instead.
-
-**From anywhere (optional).** Turn on **Settings → Phones → Reach from anywhere**. Release builds come with a relay run by the maintainer; to use your own, enter it under **Settings → Advanced → Relay address**. New pairings then open the phone page from https://yon.meo.in.th/phonelink/ and reach this computer through the relay, on any network. The relay only passes on encrypted data and stores nothing; it does see internet addresses, when devices connect and how much they send. Phones paired before show **Pair again**: scan the new code, and the old link keeps working until the phone connects with the new one. Run your own relay: `YON_RELAY_TAG=dev docker compose up -d --build` in `relay/` (it listens on 127.0.0.1 only; put Cloudflare Tunnel or another TLS proxy in front), then `bun relay/check.ts wss://<your host>` to check the WebSocket path end to end. `.github/workflows/relay.yml` + `relay/deploy.sh` deploy it with health checks and rollback; `.github/workflows/website.yml` + `website/deploy.sh` do the same for the website.
-
-Keep the phone's screen on while a big file is sending or arriving. If the phone locks, the transfer continues from where it stopped when you come back, as long as it's within about 5 minutes.
+You can turn automatic checks off, or check by hand, in **Settings → Updates**. Updating from 0.2.0 (any OS), or from 0.2.1 on macOS, needs one extra step: see the [CHANGELOG](CHANGELOG.md).
 
 ### Verify the download
 
@@ -99,18 +109,26 @@ shasum -a 256 --ignore-missing -c SHA256SUMS.txt
 
 On Windows (PowerShell), compare the output of `Get-FileHash .\Yon_x.y.z_x64-setup.exe` with the matching line in `SHA256SUMS.txt`.
 
+## Send from your phone
+
+**Yon Link** lets an iPhone or Android phone send photos and files to your computer, and receive files from it, through a small web page that Yon serves on your Wi-Fi. There is nothing to install from an app store.
+
+1. On the computer: **Settings → Phones → Pair a phone**. A QR code appears.
+2. On the phone: scan the code with the Camera and tap the link.
+3. Tap Share → **Add to Home Screen**.
+
+From then on, tap the Yon icon on the phone. Sending from the computer to a phone, phone to phone, using it away from home and running your own relay are in [Yon Link](docs/yon-link.md).
+
 ## Security
 
-- Every install has its own Ed25519 key. Connections use mutual TLS 1.3, and the sender checks it is talking to the exact device it discovered.
-- The receiver sees the sender's **device code** (for example `A1B2-C3D4-E5F6-0718`). Device names can be faked; if you're unsure, ask the sender to open Settings in Yon and compare codes.
-- Nothing is written until you accept — unless you ticked "Always accept from this device" for that sender. That list is matched by device code (the key proven in the connection), not by name, and you can remove devices in Settings. File and folder names are cleaned so they can't escape the save folder or collide with system names, and a received folder is always created new, never merged into one that's already there.
-- Received files are marked as downloaded (macOS quarantine / Windows Mark-of-the-Web), so the OS still checks them when opened.
-- Yon only accepts connections from private network addresses.
-- While Yon is running (including in the menu bar / tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
-- Updates are signed. Yon installs an update only if its signature matches the public key built into the app, so a changed download is refused. The update check is the only request Yon makes outside your local network; it asks GitHub for the latest version and sends nothing about you or your files.
-- **Yon Link (phones) is less protected than the app.** The phone page is plain `http` on your LAN, because browsers only allow secure pages to talk to local devices with a trusted certificate. Every request after the page loads is encrypted and authenticated with the phone's pairing key (ChaCha20-Poly1305), so other people on the Wi-Fi can't read or fake uploads. But someone able to tamper with your Wi-Fi traffic could change the page itself and steal the pairing key. Requests from phones are labelled "web link", and you still accept each one unless you chose "Always accept". The pairing key is in the QR code and the phone's saved link, so treat them like a password. Remove a phone in Settings to cut it off at once. Yon Link only listens (on port 53421) while at least one phone is paired. Details: [threat model](docs/threat-model-yon-link.md), [ADR-001](docs/adr/ADR-001-yon-link-web-mode.md).
+- Every install has its own Ed25519 key. Computers talk over mutual TLS 1.3, and the sender checks it is talking to the exact device it discovered.
+- The receiver sees the sender's **device code**, not just a name that could be faked.
+- Nothing is written until you accept (unless you chose "Always accept" for that device). File and folder names are cleaned so they can't escape the save folder or overwrite anything.
+- Yon only accepts connections from private network addresses. While it runs, it listens on your local network: quit it when you don't want to receive anything.
+- Updates are signed and checked against a key built into the app. The update check is the only request Yon makes outside your local network.
+- **Yon Link is less protected than the app.** The phone page is plain `http` on your LAN. Requests after it loads are encrypted with the phone's pairing key, but someone who can tamper with your Wi-Fi traffic could change the page and steal that key. Treat the QR code like a password, and remove a phone in Settings to cut it off.
 
-Known limits of this version: IPv4 only, the key is stored as a file in the app's data folder (not in the system keychain), and there is no mode that ignores unknown devices entirely yet.
+Known limits: IPv4 only, the key is a file rather than in the system keychain, and builds aren't signed yet. Everything in detail: [Security](docs/security.md).
 
 ## Development
 
@@ -137,58 +155,27 @@ The second instance shares the first one's dev server and picks a free port auto
 
 ### Checks
 
-```bash
-bun run typecheck && bun run lint
-```
+| Check | Command |
+|---|---|
+| Types and lint | `bun run typecheck && bun run lint` |
+| Rust | `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` |
+| JavaScript tests | `bun run test` |
+
+`bun run test` checks that the phone page's encryption matches the Rust side byte for byte (shared vectors in `web/crypto-vectors.json`). CI also runs `cargo audit` and `bun audit` (known vulnerabilities in dependencies) and checks that Yon compiles for Intel Macs and Windows on ARM.
+
+Two opt-in tests:
 
 ```bash
-cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test
-```
-
-```bash
-bun run test
-```
-
-CI also runs `cargo audit` and `bun audit` (known vulnerabilities in dependencies) and checks that Yon compiles for Intel Macs and Windows on ARM.
-
-`bun run test` checks that the phone page's encryption matches the Rust side byte for byte (shared vectors in `web/crypto-vectors.json`).
-
-To try the phone page in a desktop browser against a real Link server (it auto-accepts and prints a pairing URL):
-
-```bash
+# The phone page in a desktop browser, against a real Link server (auto-accepts, prints a pairing URL)
 bun run build:link && cd src-tauri && cargo test --test link -- --ignored serve_page_for_browser --nocapture
 ```
 
-The 1 GB end-to-end transfer test is opt-in:
-
 ```bash
+# A 1 GB end-to-end transfer
 cd src-tauri && cargo test --release --test transfer -- --ignored one_gigabyte --nocapture
 ```
 
-### Build
-
-```bash
-bun tauri build
-```
-
-Installers end up in `src-tauri/target/release/bundle/`. Releases are built by GitHub Actions when a `v*` tag is pushed; the tag must match the version in `tauri.conf.json`, `package.json` and `Cargo.toml`.
-
-### Update signing
-
-Releases need the updater key pair (separate from OS code signing):
-
-```bash
-bun tauri signer generate -w ~/.tauri/yon-updater.key
-```
-
-Put the public key (`~/.tauri/yon-updater.key.pub`) in `plugins.updater.pubkey` in `src-tauri/tauri.conf.json`, and the private key and its password in the GitHub Actions secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep a backup of the private key offline: if it's lost, installed copies can't be updated any more; if it leaks, someone else could sign updates. The release workflow stops if the public key is missing.
-
-### Signing (not set up yet)
-
-Builds are unsigned. Signing needs credentials that belong to the maintainer:
-
-- **macOS:** an Apple Developer ID Application certificate and notarization credentials, stored as GitHub Actions secrets for `tauri-action` (see Tauri's [macOS signing guide](https://v2.tauri.app/distribute/sign/macos/)).
-- **Windows:** an Authenticode code-signing certificate (see Tauri's [Windows signing guide](https://v2.tauri.app/distribute/sign/windows/)).
+Building releases, update signing and code signing: [Releasing](docs/releasing.md).
 
 ## Project layout
 
@@ -216,7 +203,7 @@ src-tauri/tests/     end-to-end tests: transfers over TLS, a fake phone over Yon
 
 ## Roadmap
 
-- **Next:** send text / clipboard, transfer history.
+- **Next:** send text and the clipboard, transfer history.
 - **Later:** transfers across networks (via [iroh](https://iroh.computer)), optional LocalSend compatibility, native mobile apps.
 
 ## License
