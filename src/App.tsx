@@ -28,6 +28,9 @@ import Ring from "./components/Ring";
 import SettingsSheet from "./components/SettingsSheet";
 import SharePicker from "./components/SharePicker";
 import AskSheet from "./components/AskSheet";
+import ActivitySheet from "./components/ActivitySheet";
+import { addEntry, type ActivityEntry } from "./activity";
+import { plural } from "./files";
 import type { MenuItem } from "./components/DeviceMenu";
 import UpdateBar from "./components/UpdateBar";
 
@@ -47,6 +50,10 @@ interface Receiving {
 
 /** How long a "Sent" / "Declined" note stays under a device. */
 const NOTE_MS = 5000;
+/** How long a finished "Received …" toast stays; problems a little longer.
+ *  Everything stays in Activity. */
+const TOAST_MS = 6000;
+const TOAST_PROBLEM_MS = 12000;
 
 export default function App() {
   const [state, setState] = useState<AppState | null>(null);
@@ -82,6 +89,44 @@ export default function App() {
   const [receiving, setReceiving] = useState<Receiving[]>([]);
   const [update, setUpdate] = useState<Update | null>(null);
   const timers = useRef(new Set<number>());
+  /** Finished transfers this session (the Activity sheet). */
+  const [history, setHistory] = useState<ActivityEntry[]>([]);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const activityOpenRef = useRef(false);
+  const [unseen, setUnseen] = useState(0);
+  const log = useCallback((e: ActivityEntry) => {
+    setHistory((l) => addEntry(l, e));
+    if (!activityOpenRef.current) setUnseen((n) => n + 1);
+  }, []);
+  /** Who a transfer is with, for the log: sends by id once `api.send`
+   *  returns, receives from the request. */
+  const sendInfo = useRef(new Map<number, { who: string; files: number }>());
+  const peerNames = useRef(new Map<number, string>());
+  const logSend = useCallback(
+    (id: number, result: SendOutcome) => {
+      const info = sendInfo.current.get(id);
+      if (!info) return; // result came early; sendTo logs it
+      sendInfo.current.delete(id);
+      const ok = result.outcome === "completed";
+      const neutral = result.outcome === "declined" || result.outcome === "cancelled";
+      log({
+        id,
+        dir: "out",
+        who: info.who,
+        text: ok ? `Sent ${plural(info.files, "file")}` : sendOutcomeText(result),
+        tone: ok ? "ok" : neutral ? undefined : "bad",
+        at: Date.now(),
+      });
+    },
+    [log],
+  );
+  const later = useCallback((ms: number, f: () => void) => {
+    const t = window.setTimeout(() => {
+      timers.current.delete(t);
+      f();
+    }, ms);
+    timers.current.add(t);
+  }, []);
   // WHY: a send that fails fast (device gone, connection refused) can emit
   // its status and result before `api.send` has returned its id; keep them
   // here until `sendTo` adds the entry, or the row sticks on "Connecting…".
@@ -140,16 +185,20 @@ export default function App() {
       }),
       on("devices", (devices) => setState((s) => (s ? { ...s, devices } : s))),
       on("phones-online", (online_phones) => setState((s) => (s ? { ...s, online_phones } : s))),
-      on("incoming", (req) => setIncoming(req)),
+      on("incoming", (req) => {
+        peerNames.current.set(req.id, req.sender_name);
+        setIncoming(req);
+      }),
       on("shared", () => takeShared()),
       on("update-available", (u) => setUpdate(u)),
       on("settings-changed", (settings) => setState((s) => (s ? { ...s, settings } : s))),
       on("remote-status", (remote_status) =>
         setState((s) => (s ? { ...s, settings: { ...s.settings, remote_status } } : s)),
       ),
-      on("recv-started", (r) =>
-        setReceiving((list) => [...list, { id: r.id, from: r.sender_name, done: 0, total: r.total }]),
-      ),
+      on("recv-started", (r) => {
+        peerNames.current.set(r.id, r.sender_name);
+        setReceiving((list) => [...list, { id: r.id, from: r.sender_name, done: 0, total: r.total }]);
+      }),
       on("recv-progress", (p) =>
         setReceiving((list) =>
           list.map((r) => (r.id === p.id ? { ...r, done: p.done, total: p.total } : r)),
@@ -158,6 +207,21 @@ export default function App() {
       on("recv-finished", (f) => {
         setIncoming((cur) => (cur?.id === f.id ? null : cur));
         setReceiving((list) => list.map((r) => (r.id === f.id ? { ...r, finished: f } : r)));
+        const ok = f.outcome === "completed";
+        log({
+          id: f.id,
+          dir: "in",
+          who: peerNames.current.get(f.id) ?? "Unknown device",
+          text: recvOutcomeText(f),
+          tone: ok ? "ok" : f.outcome === "failed" ? "bad" : undefined,
+          at: Date.now(),
+          canReveal: f.saved.length > 0,
+        });
+        peerNames.current.delete(f.id);
+        // WHY: the toast fades on its own; Activity keeps the record.
+        later(ok ? TOAST_MS : TOAST_PROBLEM_MS, () =>
+          setReceiving((list) => list.filter((r) => r.id !== f.id)),
+        );
       }),
       on("send-status", ({ id, status }) =>
         setOutgoing((m) => {
@@ -173,6 +237,7 @@ export default function App() {
           return m;
         });
         fadeLater(id, result);
+        logSend(id, result);
       }),
     ];
     return () => {
@@ -201,13 +266,15 @@ export default function App() {
     try {
       const id = await api.send(selection.id, device.id);
       setRecent((r) => ({ ...r, [device.id]: Date.now() }));
+      sendInfo.current.set(id, { who: device.name, files: selection.files.length });
+      const seen = early.current.get(id);
+      early.current.delete(id);
+      if (seen?.result) logSend(id, seen.result);
       setOutgoing((m) => {
         // One note per device: drop the previous one for this device.
         const rest = Object.fromEntries(
           Object.entries(m).filter(([, o]) => o.deviceId !== device.id),
         );
-        const seen = early.current.get(id);
-        early.current.delete(id);
         return {
           ...rest,
           [id]: {
@@ -301,6 +368,23 @@ export default function App() {
         </span>
         <button
           type="button"
+          className="icon activity-button"
+          aria-label={unseen ? `Activity, ${unseen} new` : "Activity"}
+          title="Activity"
+          onClick={() => {
+            activityOpenRef.current = true;
+            setActivityOpen(true);
+            setUnseen(0);
+          }}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden>
+            <path d="M12 21a9 9 0 1 0-9-9" />
+            <path d="M3 12h.01M12 7v5l3 2" />
+          </svg>
+          {unseen > 0 && <span className="badge" aria-hidden />}
+        </button>
+        <button
+          type="button"
           className="icon"
           aria-label="Settings"
           onClick={() => setSettingsOpen(true)}
@@ -359,10 +443,14 @@ export default function App() {
               {r.finished && r.finished.saved.length > 0 && (
                 <button
                   type="button"
-                  className="quiet"
+                  className="icon small"
+                  aria-label={`Show in ${fileManagerName}`}
+                  title={`Show in ${fileManagerName}`}
                   onClick={() => api.reveal(r.id).catch((e) => setError(errorText(e)))}
                 >
-                  Show in {fileManagerName}
+                  <svg viewBox="0 0 24 24" aria-hidden>
+                    <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
+                  </svg>
                 </button>
               )}
               {r.finished && (
@@ -370,10 +458,8 @@ export default function App() {
                   type="button"
                   className="icon small"
                   aria-label="Dismiss"
-                  onClick={() => {
-                    api.forgetReceived(r.id);
-                    setReceiving((l) => l.filter((x) => x.id !== r.id));
-                  }}
+                  // Only the toast goes; Activity can still show the files.
+                  onClick={() => setReceiving((l) => l.filter((x) => x.id !== r.id))}
                 >
                   <svg viewBox="0 0 24 24" aria-hidden>
                     <path d="M6 6l12 12M18 6 6 18" />
@@ -419,6 +505,21 @@ export default function App() {
           onClose={() => {
             api.clearSelection(shared.id);
             setShared(null);
+          }}
+        />
+      )}
+      {activityOpen && (
+        <ActivitySheet
+          entries={history}
+          onReveal={(id) => api.reveal(id).catch((e) => setError(errorText(e)))}
+          onClear={() => {
+            // Rust forgets the paths too; nothing of these transfers is kept.
+            for (const e of history) if (e.canReveal) api.forgetReceived(e.id);
+            setHistory([]);
+          }}
+          onClose={() => {
+            activityOpenRef.current = false;
+            setActivityOpen(false);
           }}
         />
       )}

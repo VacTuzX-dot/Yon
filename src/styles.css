@@ -467,35 +467,139 @@ button.avatar:disabled:has(.progress-ring) {
 
 /* ---------- incoming tray ---------- */
 
+/* Incoming transfers: small toasts top right, under the header, where the
+   OS puts notifications (the bottom has the footer and Pair a phone).
+   Finished ones fade on their own; Activity keeps them. */
 .tray {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  z-index: 5;
   list-style: none;
-  margin: 0 auto 14px;
+  margin: 0;
   padding: 0;
-  width: min(560px, 100%);
+  width: min(320px, calc(100vw - 32px));
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .tray li {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  gap: 10px;
+  padding: 6px 6px 6px 8px;
+  border-radius: 12px;
   background: var(--surface);
   border: 1px solid var(--line);
+  animation: toast-in 180ms ease-out;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.tray .avatar.small {
+  width: 28px;
+  height: 28px;
+}
+
+.tray .initials {
+  font-size: 11px;
 }
 
 .tray .progress-ring {
-  inset: -5px;
-  width: calc(100% + 10px);
-  height: calc(100% + 10px);
+  inset: -4px;
+  width: calc(100% + 8px);
+  height: calc(100% + 8px);
 }
 
 .tray-text {
   flex: 1;
-  font-size: 14px;
+  min-width: 0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tray .quiet {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+/* ---------- activity ---------- */
+
+.activity-button {
+  position: relative;
+  margin-left: auto;
+}
+
+.badge {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--bg, var(--surface));
+}
+
+.activity {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow: auto;
+  border-top: 1px solid var(--line);
+}
+
+.activity li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.activity-dir {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.activity-dir.in {
+  stroke: var(--accent);
+}
+
+.activity-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.sheet .activity-text .hint {
+  margin: 2px 0 0;
+}
+
+.activity-text .hint.ok {
+  color: var(--ok, var(--muted));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray li {
+    animation: none;
+  }
 }
 
 /* ---------- buttons ---------- */
