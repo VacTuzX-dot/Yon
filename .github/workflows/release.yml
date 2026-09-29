@@ -62,6 +62,8 @@ jobs:
             target: aarch64-pc-windows-msvc
             args: --target aarch64-pc-windows-msvc --bundles nsis
     runs-on: ${{ matrix.platform }}
+    # A normal build takes ~10 min; fail a hang early instead of after 6 h.
+    timeout-minutes: 45
     outputs:
       release_id: ${{ steps.tauri.outputs.releaseId }}
     steps:
@@ -100,25 +102,12 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ github.ref_name }}
           releaseName: Yon ${{ github.ref_name }}
-          # WHY: direct links per platform so nobody has to guess between
-          # the .dmg, .exe, .tar.gz and .sig files in the asset list.
-          releaseBody: |
-            ## Download
-
-            | Your computer | File |
-            |---|---|
-            | **Mac with Apple Silicon** (M1, M2, M3, M4 or newer) | [Yon_${{ needs.version.outputs.version }}_aarch64.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Yon_${{ needs.version.outputs.version }}_aarch64.dmg) |
-            | **Mac with an Intel processor** | [Yon_${{ needs.version.outputs.version }}_x64.dmg](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Yon_${{ needs.version.outputs.version }}_x64.dmg) |
-            | **Windows 10 / 11, 64-bit** (x64, Intel or AMD) | [Yon_${{ needs.version.outputs.version }}_x64-setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Yon_${{ needs.version.outputs.version }}_x64-setup.exe) |
-            | **Windows 11 on ARM** (Snapdragon, e.g. Copilot+ PCs) | [Yon_${{ needs.version.outputs.version }}_arm64-setup.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/Yon_${{ needs.version.outputs.version }}_arm64-setup.exe) |
-
-            Not sure which one?
-            - **Mac:** Apple menu → About This Mac. "Chip: Apple M…" means Apple Silicon; "Processor: … Intel …" means Intel.
-            - **Windows:** Settings → System → About → System type. "x64-based processor" → x64; "ARM-based processor" → ARM. 32-bit Windows (x86) isn't supported.
-
-            **Mac without the "Open Anyway" step:** `curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash`
-
-            Unsigned build: see the [README](https://github.com/${{ github.repository }}#install) for the first-open steps. Changes and known problems: [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md).
+          # WHY: short and ASCII-only. tauri-action passes inputs to the build
+          # as environment variables, and on Windows the 1.3 KB v0.2.3 body
+          # (with "→"/"…") made `bun tauri build` hang with no output for 6 h
+          # (reproduced on a probe branch; a plain body built fine). The full
+          # notes are written by the checksums job, after every build.
+          releaseBody: Yon ${{ needs.version.outputs.version }}. Download links follow once every build has finished.
           releaseDraft: true
           prerelease: ${{ contains(github.ref_name, '-') }}
           # WHY: four parallel jobs each rewriting latest.json race and can
@@ -128,7 +117,7 @@ jobs:
   # latest.json (updater manifest) and SHA256SUMS.txt, computed once from the
   # exact files attached to the release, after every build has finished.
   checksums:
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -182,3 +171,32 @@ jobs:
           gh api --method POST -H "Content-Type: text/plain" \
             "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=SHA256SUMS.txt" \
             --input ../SHA256SUMS.txt > /dev/null
+
+      - name: Release notes with download links
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Quoted heredoc: nothing inside is expanded or run; @...@ are filled below.
+          cat > notes.md <<'EOF'
+          ## Download
+
+          | Your computer | File |
+          |---|---|
+          | **Mac with Apple Silicon** (M1, M2, M3, M4 or newer) | [Yon_@VERSION@_aarch64.dmg](https://github.com/@REPO@/releases/download/@TAG@/Yon_@VERSION@_aarch64.dmg) |
+          | **Mac with an Intel processor** | [Yon_@VERSION@_x64.dmg](https://github.com/@REPO@/releases/download/@TAG@/Yon_@VERSION@_x64.dmg) |
+          | **Windows 10 / 11, 64-bit** (x64, Intel or AMD) | [Yon_@VERSION@_x64-setup.exe](https://github.com/@REPO@/releases/download/@TAG@/Yon_@VERSION@_x64-setup.exe) |
+          | **Windows 11 on ARM** (Snapdragon, e.g. Copilot+ PCs) | [Yon_@VERSION@_arm64-setup.exe](https://github.com/@REPO@/releases/download/@TAG@/Yon_@VERSION@_arm64-setup.exe) |
+
+          Not sure which one?
+          - **Mac:** Apple menu → About This Mac. "Chip: Apple M…" means Apple Silicon; "Processor: … Intel …" means Intel.
+          - **Windows:** Settings → System → About → System type. "x64-based processor" → x64; "ARM-based processor" → ARM. 32-bit Windows (x86) isn't supported.
+
+          **Mac without the "Open Anyway" step:** `curl -fsSL https://raw.githubusercontent.com/@REPO@/main/install.sh | bash`
+
+          Unsigned build: see the [README](https://github.com/@REPO@#install) for the first-open steps. Changes and known problems: [CHANGELOG](https://github.com/@REPO@/blob/main/CHANGELOG.md).
+          EOF
+          sed -i "s|@VERSION@|$VERSION|g; s|@REPO@|$REPO|g; s|@TAG@|$GITHUB_REF_NAME|g" notes.md
+          cat notes.md
+          gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F body=@notes.md > /dev/null
