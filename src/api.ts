@@ -9,6 +9,8 @@ export interface Device {
   os: string;
   app: string;
   compatible: boolean;
+  /** Keeps folders it receives (Yon 0.2.3+). Otherwise files arrive loose. */
+  folders: boolean;
   short_fingerprint: string;
   /** Phones only: its Yon page is open right now. */
   online?: boolean;
@@ -219,6 +221,7 @@ export function allDevices(state: AppState): Device[] {
     os: "phone",
     app: "",
     compatible: true,
+    folders: false,
     short_fingerprint: "",
     online: state.online_phones.includes(p.id),
   }));

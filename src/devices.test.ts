@@ -8,6 +8,7 @@ const dev = (id: string, name: string, os: string, extra: Partial<Device> = {}):
   os,
   app: "",
   compatible: true,
+  folders: true,
   short_fingerprint: "",
   ...extra,
 });

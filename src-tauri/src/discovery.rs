@@ -20,6 +20,8 @@ pub struct Device {
     pub os: String,
     pub app: String,
     pub compatible: bool,
+    /// Keeps received folders (0.2.3+). Older devices save everything flat.
+    pub folders: bool,
     pub short_fingerprint: String,
     #[serde(skip)]
     /// Candidate addresses, best first (see [`rank`]). Tried in order.
@@ -55,6 +57,8 @@ impl Discovery {
             ("name", clean_name(name)),
             ("os", crate::platform::os_name().to_string()),
             ("app", env!("CARGO_PKG_VERSION").to_string()),
+            // Optional features, comma-separated; absent on 0.2.2 and older.
+            ("f", "folders".to_string()),
         ];
         let info = ServiceInfo::new(
             SERVICE_TYPE,
@@ -151,6 +155,7 @@ pub fn device_from(
         os: clean(&get("os"), 16),
         app: clean(&get("app"), 16),
         compatible: v == PROTOCOL_VERSION,
+        folders: props("f").is_some_and(|f| f.split(',').any(|x| x == "folders")),
         addrs: ips
             .into_iter()
             .map(|ip| SocketAddrV4::new(ip, port))
@@ -208,9 +213,24 @@ mod tests {
         ]);
         let d = device_from(&props(&m), &[Ipv4Addr::new(192, 168, 1, 9)], 53420).unwrap();
         assert!(d.compatible);
+        assert!(!d.folders, "no \"f\" key = older Yon, flat");
         assert_eq!(d.name, "Leo's Mac");
         assert_eq!(d.short_fingerprint, "A1B2-C3D4-E5F6-0718");
         assert_eq!(d.addrs, vec!["192.168.1.9:53420".parse().unwrap()]);
+    }
+
+    #[test]
+    fn reads_the_folders_feature() {
+        let ip = [Ipv4Addr::new(192, 168, 1, 9)];
+        let with = |f: &'static str| {
+            let m = HashMap::from([("v", "1"), ("id", ID), ("f", f)]);
+            let folders = device_from(&props(&m), &ip, 53420).unwrap().folders;
+            folders
+        };
+        assert!(with("folders"));
+        assert!(with("other,folders"));
+        assert!(!with("foldersx"));
+        assert!(!with(""));
     }
 
     #[test]

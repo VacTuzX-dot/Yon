@@ -49,6 +49,13 @@ export default function ConfirmSheet({ device, selection, onSend, onAdd, onClose
       <p className="summary">
         {plural(n, "file")}, {formatBytes(selection.total)}
       </p>
+      {!device.folders && selection.files.some((f) => f.dir) && (
+        <p className="hint">
+          {device.os === "phone"
+            ? "Phones get the files without their folders."
+            : `${device.name} runs an older Yon, so the files arrive without their folders. Update Yon there to keep them.`}
+        </p>
+      )}
       <div className="actions">
         <button type="button" className="quiet" onClick={onClose}>
           Cancel

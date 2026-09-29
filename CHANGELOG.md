@@ -6,7 +6,7 @@ Known problems are in red boxes, with the version that fixes them and what to do
 
 ### New
 
-- **Send folders.** Drop a folder on a device, choose **Send a folder…** from a device's ⋯ menu, or use **Add a folder** before sending. The folder arrives as a new folder next to your other received files (`Photos`, or `Photos (1)` if one is already there) with everything inside in place. Links inside folders are skipped, not followed. Computers on 0.2.2 or older still receive the files, without the folders. Phones get the files without folders.
+- **Send folders.** Drop a folder on a device, choose **Send a folder…** from a device's ⋯ menu, or use **Add a folder** before sending. The folder arrives as a new folder next to your other received files (`Photos`, or `Photos (1)` if one is already there) with everything inside in place. Links inside folders are skipped, not followed. Computers on 0.2.2 or older still receive the files, without the folders, and the send sheet says so before you send. Phones get the files without folders.
 - **Intel Macs** and **Windows on ARM** (Snapdragon PCs) get their own downloads. The Mac install script picks the right one.
 - Every CI run checks Rust and JavaScript dependencies for known vulnerabilities (`cargo audit`, `bun audit`) and that Yon still builds for Intel Macs and Windows on ARM.
 
