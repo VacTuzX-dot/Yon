@@ -7,18 +7,25 @@
     <meta name="description" content="Yon is a small open-source app for sending files between your computers and phones. No account, no cloud, encrypted end to end." />
     <link rel="icon" href="icon.png" />
     <link rel="stylesheet" href="home.css" />
-    <script src="home.js"></script>
+    <script src="home.js" defer></script>
     <script src="toss.js" defer></script>
   </head>
   <body>
     <header class="top">
       <a class="mark" href="/"><img src="icon.png" alt="" width="28" height="28" />Yon</a>
-      <a href="https://github.com/VacTuzX-dot/Yon">GitHub</a>
+      <nav aria-label="Site">
+        <a href="film/">Film</a>
+        <a href="https://github.com/VacTuzX-dot/Yon">GitHub</a>
+      </nav>
     </header>
 
     <main>
       <section class="hero">
-        <h1>Toss files to the computer next&nbsp;to&nbsp;you.</h1>
+        <div class="hero-head">
+          <h1>Toss files to the computer next&nbsp;to&nbsp;you.</h1>
+          <div class="seal" aria-hidden="true">โยน</div>
+        </div>
+        <p class="vertical" lang="ja" aria-hidden="true">ファイルを、投げる。</p>
         <p class="lede">
           Yon (โยน, “to toss”) sends files between your Macs, PCs and phones. Straight from one
           device to the other, encrypted, with no account and no cloud.
@@ -72,7 +79,10 @@
           for your Mac or PC. Yon updates itself after that.
         </p>
         <p>On a Mac you can also install from Terminal, which skips the first-open warning:</p>
-        <pre><code>curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash</code></pre>
+        <figure class="code">
+          <figcaption><span>bash</span><button type="button" class="copy" aria-live="polite"><svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg><svg class="ic-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg><span class="copy-label">Copy</span></button></figcaption>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash</code></pre>
+        </figure>
         <p class="note">
           The builds aren't notarized by Apple or signed for Windows yet, so the first open from a
           download asks you to confirm: macOS, Privacy &amp; Security → Open Anyway; Windows, More
@@ -109,32 +119,39 @@
       <a href="https://github.com/VacTuzX-dot/Yon">Source on GitHub</a> ·
       <a href="https://github.com/VacTuzX-dot/Yon/blob/main/CHANGELOG.md">Changelog</a> · MIT license
     </footer>
+    <div class="waves" aria-hidden="true"></div>
 
     <dialog id="download" aria-labelledby="download-title">
       <div class="dl-head">
         <h2 id="download-title">Download Yon __VERSION__</h2>
         <button type="button" class="dl-close" aria-label="Close">×</button>
       </div>
-      <p class="dl-pick">Which computer?</p>
-      <div class="dl-os" role="group" aria-label="Operating system">
-        <button type="button" data-os="mac" aria-pressed="false">Mac</button>
-        <button type="button" data-os="win" aria-pressed="false">Windows</button>
+      <div class="dl-body">
+        <p class="dl-pick" id="dl-pick">Which computer?</p>
+        <div class="dl-os" role="group" aria-labelledby="dl-pick">
+          <button type="button" data-os="mac" aria-pressed="false">Mac<small>Apple Silicon · Intel</small></button>
+          <button type="button" data-os="win" aria-pressed="false">Windows<small>x64 · ARM64</small></button>
+        </div>
+        <div class="dl-list" data-list="mac" hidden>
+          <a href="__BASE__/Yon___VERSION___aarch64.dmg" data-hint="Open the .dmg and drag Yon to Applications. First open: Privacy &amp; Security → Open Anyway.">Apple Silicon<span>M1 and newer · .dmg</span></a>
+          <a href="__BASE__/Yon___VERSION___x64.dmg" data-hint="Open the .dmg and drag Yon to Applications. First open: Privacy &amp; Security → Open Anyway.">Intel<span>.dmg</span></a>
+          <p class="note">Or from Terminal, which skips the first-open warning:</p>
+          <figure class="code">
+          <figcaption><span>bash</span><button type="button" class="copy" aria-live="polite"><svg class="ic-copy" viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V6a2 2 0 0 1 2-2h9" /></svg><svg class="ic-check" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg><span class="copy-label">Copy</span></button></figcaption>
+          <pre><code>curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash</code></pre>
+        </figure>
+        </div>
+        <div class="dl-list" data-list="win" hidden>
+          <a href="__BASE__/Yon___VERSION___x64-setup.exe" data-hint="Run the installer. If SmartScreen appears: More info → Run anyway.">Intel or AMD<span>x64 · installer</span></a>
+          <a href="__BASE__/Yon___VERSION___arm64-setup.exe" data-hint="Run the installer. If SmartScreen appears: More info → Run anyway.">ARM<span>Snapdragon and other ARM64 · installer</span></a>
+        </div>
+        <p class="dl-status" id="dl-status" role="status"></p>
+        <p class="note dl-foot">
+          Not notarized or signed yet, so the first open asks you to confirm.
+          <a href="__BASE__/SHA256SUMS.txt">Checksums</a>
+        </p>
       </div>
-      <div class="dl-list" data-list="mac" hidden>
-        <a href="__BASE__/Yon___VERSION___aarch64.dmg">Apple Silicon <span>M1 and newer · .dmg</span></a>
-        <a href="__BASE__/Yon___VERSION___x64.dmg">Intel <span>.dmg</span></a>
-        <p class="note">Or from Terminal, which skips the first-open warning:</p>
-        <pre><code>curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash</code></pre>
-      </div>
-      <div class="dl-list" data-list="win" hidden>
-        <a href="__BASE__/Yon___VERSION___x64-setup.exe">Intel or AMD <span>x64 · installer</span></a>
-        <a href="__BASE__/Yon___VERSION___arm64-setup.exe">ARM <span>Snapdragon and other ARM64 · installer</span></a>
-      </div>
-      <p class="note dl-foot">
-        Not notarized or signed yet: macOS asks you to allow it in Privacy &amp; Security; Windows,
-        More info → Run anyway.
-        <a href="__BASE__/SHA256SUMS.txt">Checksums</a>
-      </p>
     </dialog>
+
   </body>
 </html>

@@ -1,23 +1,36 @@
+/* Yon project page. Washi paper, sumi ink, marigold (ดาวเรือง) as the one
+   bright colour and a vermilion hanko seal as the only red. System fonts only:
+   the page's CSP allows nothing third-party. */
 :root {
-  --bg: #f5f6f8;
-  --surface: #ffffff;
-  --ink: #1e222b;
-  --muted: #5d6372;
-  --line: #e1e4ea;
-  --accent: #e8a317; /* marigold (ดาวเรือง) */
-  --accent-strong: #b87d05; /* marigold dark enough for links on --bg */
+  --bg: #f3f1ec;
+  --surface: #fbfaf6;
+  --ink: #1d1b18;
+  --muted: #5f5a51;
+  --line: #d8d3c7;
+  --accent: #e8a317; /* marigold */
+  --accent-strong: #8a5f00; /* marigold dark enough for links on --bg */
+  --shu: #c73a2c; /* vermilion, like a hanko seal */
+  --wave: rgb(29 27 24 / 0.1);
+  --code-bg: #1b1a1f;
+  --code-ink: #ece8df;
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.25, 1.15);
+  --serif: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", "Noto Serif Thai", Georgia, serif;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #181b21;
-    --surface: #22262e;
-    --ink: #eceef2;
-    --muted: #979eae;
-    --line: #323741;
+    --bg: #131419;
+    --surface: #1b1d24;
+    --ink: #ece8df;
+    --muted: #a29d92;
+    --line: #2e313a;
     --accent: #f2b53a;
     --accent-strong: #f2b53a;
+    --shu: #e5594b;
+    --wave: rgb(236 232 223 / 0.09);
+    --code-bg: #0d0e12;
   }
 }
 
@@ -29,7 +42,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 17px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  font: 17px/1.65 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans Thai", sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -39,7 +52,7 @@ a {
 }
 
 a:focus-visible,
-.button:focus-visible {
+button:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
@@ -58,10 +71,25 @@ footer {
   padding: 20px 0;
 }
 
+.top nav {
+  display: flex;
+  gap: 22px;
+}
+
 .top a {
   color: var(--ink);
   text-decoration: none;
   font-weight: 600;
+}
+
+.top nav a {
+  background: linear-gradient(var(--shu), var(--shu)) 0 100% / 0 2px no-repeat;
+  padding-bottom: 2px;
+  transition: background-size 0.3s var(--ease-out);
+}
+
+.top nav a:hover {
+  background-size: 100% 2px;
 }
 
 .mark {
@@ -72,22 +100,69 @@ footer {
   letter-spacing: -0.02em;
 }
 
+/* Hero */
 .hero {
-  padding: 40px 0 8px;
+  position: relative;
+  padding: 48px 0 8px;
+}
+
+.hero-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 16px 24px;
 }
 
 h1 {
   margin: 0;
   max-width: 14ch;
+  font-family: var(--serif);
   font-size: clamp(38px, 7vw, 64px);
-  line-height: 1.04;
-  letter-spacing: -0.035em;
-  font-weight: 750;
+  line-height: 1.08;
+  letter-spacing: -0.02em;
+  font-weight: 700;
+}
+
+/* The hanko: stamped once when the page opens. */
+.seal {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+  background: var(--shu);
+  color: #fff;
+  font-family: var(--serif);
+  font-size: 19px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 3px var(--shu), inset 0 0 0 4.5px rgb(255 255 255 / 0.75);
+  transform: rotate(-6deg);
+  user-select: none;
+}
+
+/* Japanese for "Toss files." set upright down the right edge on wide screens. */
+.vertical {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .vertical {
+    display: block;
+    position: absolute;
+    top: 56px;
+    right: -76px;
+    writing-mode: vertical-rl;
+    font-family: var(--serif);
+    font-size: 15px;
+    letter-spacing: 0.5em;
+    color: var(--muted);
+  }
 }
 
 .lede {
   max-width: 34em;
-  margin: 20px 0 0;
+  margin: 22px 0 0;
   font-size: 19px;
   color: var(--muted);
 }
@@ -96,22 +171,35 @@ h1 {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 18px;
-  margin-top: 28px;
+  gap: 12px 20px;
+  margin-top: 30px;
 }
 
+/* Buttons have a bottom edge that the press squashes, like a real key. */
 .button {
-  display: inline-block;
-  padding: 12px 22px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 26px;
+  overflow: hidden;
   border-radius: 999px;
   background: var(--accent);
-  color: #1e222b;
-  font-weight: 650;
+  box-shadow: 0 4px 0 var(--accent-strong);
+  color: #1d1b18;
+  font-weight: 700;
   text-decoration: none;
+  transition: transform 0.15s var(--ease-out), box-shadow 0.15s var(--ease-out);
 }
 
 .button:hover {
-  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow: 0 5px 0 var(--accent-strong);
+}
+
+.button:active {
+  transform: translateY(3px);
+  box-shadow: 0 1px 0 var(--accent-strong);
 }
 
 .watch {
@@ -127,7 +215,7 @@ h1 {
    (toss.ts) the file becomes a stream of chunks over the SVG. */
 .stage {
   position: relative;
-  margin: 36px 0 12px;
+  margin: 40px 0 12px;
 }
 
 .toss {
@@ -206,7 +294,8 @@ h1 {
   position: absolute;
   top: 0;
   right: 0;
-  padding: 6px 12px;
+  min-height: 36px;
+  padding: 6px 14px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--surface);
@@ -214,6 +303,11 @@ h1 {
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+  transition: border-color 0.2s, transform 0.15s var(--ease-out);
+}
+
+.sound:active {
+  transform: scale(0.95);
 }
 
 .sound[aria-pressed="true"] {
@@ -246,20 +340,9 @@ h1 {
   opacity: 0.35;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .toss .arc {
-    animation: toss 1.6s ease-out 1 both;
-  }
-  @keyframes toss {
-    from {
-      stroke-dashoffset: 120;
-      opacity: 0;
-    }
-  }
-}
-
+/* Sections */
 section {
-  padding: 28px 0;
+  padding: 40px 0;
   border-top: 1px solid var(--line);
 }
 
@@ -268,9 +351,22 @@ section {
 }
 
 h2 {
-  margin: 0 0 12px;
-  font-size: 24px;
-  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  margin: 0 0 16px;
+  font-family: var(--serif);
+  font-size: 26px;
+  letter-spacing: -0.01em;
+}
+
+/* An ink stroke before each heading. */
+h2::before {
+  content: "";
+  width: 4px;
+  height: 0.95em;
+  margin-right: 12px;
+  border-radius: 2px;
+  background: var(--shu);
 }
 
 p {
@@ -278,29 +374,155 @@ p {
   max-width: 38em;
 }
 
-.facts,
-.steps {
+.facts {
+  display: grid;
+  gap: 8px;
   margin: 0;
-  padding-left: 1.2em;
+  padding: 0;
   max-width: 38em;
+  list-style: none;
 }
 
-.facts li,
+.facts li {
+  position: relative;
+  padding: 6px 0 6px 22px;
+  transition: transform 0.25s var(--ease-out);
+}
+
+.facts li::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--line);
+  transition: background 0.25s;
+}
+
+.facts li:hover {
+  transform: translateX(4px);
+}
+
+.facts li:hover::before {
+  background: var(--shu);
+}
+
+.steps {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  max-width: 38em;
+  list-style: none;
+  counter-reset: step;
+}
+
 .steps li {
-  margin-bottom: 10px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  counter-increment: step;
 }
 
-pre {
+.steps li::before {
+  content: counter(step);
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1.5px solid var(--shu);
+  border-radius: 50%;
+  color: var(--shu);
+  font-family: var(--serif);
+  font-weight: 700;
+}
+
+/* Code with a Copy button */
+.code {
+  margin: 0 0 16px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--code-bg);
+  color: var(--code-ink);
+}
+
+.code figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 6px 2px 16px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  font: 13px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  color: rgb(236 232 223 / 0.6);
+}
+
+.code pre {
+  margin: 0;
   overflow-x: auto;
   padding: 14px 16px;
-  border-radius: 12px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  font-size: 14px;
+  font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
+.code pre::before {
+  content: "$ ";
+  color: var(--accent);
+  user-select: none;
+}
+
+.copy {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--code-ink);
+  font: 600 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s var(--ease-out);
+}
+
+.copy:hover {
+  background: rgb(255 255 255 / 0.1);
+}
+
+.copy:active {
+  transform: scale(0.94);
+}
+
+.copy svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.copy .ic-check,
+.copy.copied .ic-copy {
+  display: none;
+}
+
+.copy.copied {
+  color: #8fe0a4;
+}
+
+.copy.copied .ic-check {
+  display: block;
+  stroke-dasharray: 24;
+  animation: draw 0.35s var(--ease-out) both;
+}
+
+/* Footer: a hem of waves (seigaiha) */
 footer {
-  padding: 28px 0 48px;
+  padding: 28px 0 24px;
   border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 15px;
@@ -310,70 +532,175 @@ footer a {
   color: inherit;
 }
 
+.waves,
+.dl-head::before {
+  --fill: var(--bg);
+  background-color: var(--fill);
+  background-image:
+    radial-gradient(circle 20px at 50% 100%, var(--fill) 0 5px, var(--wave) 5px 6px, var(--fill) 6px 10px, var(--wave) 10px 11px, var(--fill) 11px 15px, var(--wave) 15px 16px, var(--fill) 16px 19px, var(--wave) 19px 20px, transparent 20.5px),
+    radial-gradient(circle 20px at 50% 100%, var(--fill) 0 5px, var(--wave) 5px 6px, var(--fill) 6px 10px, var(--wave) 10px 11px, var(--fill) 11px 15px, var(--wave) 15px 16px, var(--fill) 16px 19px, var(--wave) 19px 20px, transparent 20.5px);
+  background-size: 40px 20px;
+  background-position: 20px 10px, 0 0;
+}
+
+.waves {
+  height: 84px;
+  -webkit-mask-image: linear-gradient(to top, #000 30%, transparent);
+  mask-image: linear-gradient(to top, #000 30%, transparent);
+}
+
 /* Download dialog */
 #download {
-  width: min(440px, calc(100vw - 32px));
-  padding: 22px;
+  width: min(460px, calc(100vw - 32px));
+  padding: 0;
+  overflow: visible;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: 18px;
   background: var(--surface);
   color: var(--ink);
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.35);
 }
 
 #download::backdrop {
-  background: rgb(0 0 0 / 0.5);
+  background: rgb(20 16 10 / 0.55);
+  backdrop-filter: blur(6px);
 }
 
 .dl-head {
+  position: relative;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 22px 16px 26px 24px;
+}
+
+/* Waves fade out towards the bottom of the header. */
+.dl-head::before {
+  --fill: var(--surface);
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 17px 17px 0 0;
+  -webkit-mask-image: linear-gradient(#000, transparent);
+  mask-image: linear-gradient(#000, transparent);
 }
 
 .dl-head h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: 22px;
 }
 
 .dl-close {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  overflow: hidden;
   border: 0;
+  border-radius: 50%;
   background: none;
   color: var(--muted);
   font-size: 28px;
   line-height: 1;
   cursor: pointer;
+  transition: transform 0.25s var(--ease-out), color 0.2s;
+}
+
+.dl-close:hover {
+  color: var(--ink);
+  transform: rotate(90deg);
+}
+
+.dl-body {
+  padding: 0 24px 24px;
 }
 
 .dl-pick {
-  margin: 14px 0 8px;
+  margin: 0 0 10px;
   color: var(--muted);
 }
 
+/* Segmented choice: the marigold thumb slides to the pick. */
 .dl-os {
+  position: relative;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 10px;
+  padding: 4px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface));
+}
+
+.dl-os::before {
+  content: "";
+  position: absolute;
+  inset: 4px auto 4px 4px;
+  width: calc(50% - 4px);
+  border-radius: 12px;
+  background: var(--accent);
+  box-shadow: 0 3px 0 var(--accent-strong);
+  opacity: 0;
+  transform: translateX(0);
+  transition: transform 0.35s var(--ease-spring), opacity 0.2s;
+}
+
+.dl-os[data-picked]::before {
+  opacity: 1;
+}
+
+.dl-os[data-picked="win"]::before {
+  transform: translateX(100%);
 }
 
 .dl-os button {
-  padding: 14px;
-  border: 2px solid var(--line);
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 2px;
+  min-height: 60px;
+  padding: 8px;
+  overflow: hidden;
+  border: 0;
   border-radius: 12px;
   background: none;
   color: var(--ink);
   font: inherit;
-  font-weight: 650;
+  font-size: 18px;
+  font-weight: 700;
   cursor: pointer;
+  transition: transform 0.15s var(--ease-out);
+}
+
+.dl-os button:active {
+  transform: scale(0.96);
+}
+
+.dl-os button small {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+
+.dl-os button[data-suggest]:not([aria-pressed="true"])::after {
+  content: "your computer";
+  position: absolute;
+  top: 5px;
+  right: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--shu);
 }
 
 .dl-os button[aria-pressed="true"] {
-  border-color: var(--accent);
+  color: #1d1b18;
 }
 
 .dl-list {
   display: grid;
-  gap: 8px;
-  margin-top: 14px;
+  gap: 10px;
+  margin-top: 16px;
 }
 
 .dl-list[hidden] {
@@ -381,33 +708,229 @@ footer a {
 }
 
 .dl-list a {
-  display: flex;
-  flex-direction: column;
-  padding: 12px 16px;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  min-height: 60px;
+  padding: 10px 16px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
   border-radius: 12px;
-  background: var(--accent);
-  color: #1e222b;
-  font-weight: 650;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--ink);
+  font-weight: 700;
   text-decoration: none;
+  transition: transform 0.15s var(--ease-out), background 0.2s, border-color 0.2s;
 }
 
 .dl-list a span {
+  grid-column: 1;
   font-size: 14px;
   font-weight: 400;
+  color: var(--muted);
 }
 
-.dl-list pre {
-  margin: 0;
-  overflow-x: auto;
+/* An arrow that nods on hover, and a tick once the download has started. */
+.dl-list a::after {
+  content: "";
+  grid-area: 1 / 2 / span 2;
+  width: 10px;
+  height: 10px;
+  border-top: 2.5px solid currentColor;
+  border-right: 2.5px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 0.25s var(--ease-out);
+}
+
+.dl-list a:hover {
+  background: color-mix(in srgb, var(--accent) 24%, var(--surface));
+}
+
+.dl-list a:hover::after {
+  transform: translateX(4px) rotate(45deg);
+}
+
+.dl-list a:active {
+  transform: scale(0.98);
+}
+
+.dl-list a.started {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #1d1b18;
+}
+
+.dl-list a.started span {
+  color: #1d1b18;
+}
+
+.dl-list a.started::after {
+  width: 8px;
+  height: 15px;
+  border: solid currentColor;
+  border-width: 0 3px 3px 0;
+  transform: rotate(45deg);
+}
+
+.dl-list .code {
+  margin: 4px 0 0;
+}
+
+.dl-status {
+  min-height: 1.6em;
+  margin: 14px 0 0;
+  font-size: 15px;
 }
 
 .dl-foot {
-  margin: 16px 0 0;
+  margin: 8px 0 0;
   font-size: 14px;
 }
 
-#download button:focus-visible,
-.dl-list a:focus-visible {
-  outline: 2px solid var(--ink);
-  outline-offset: 2px;
+/* Effects */
+.ink {
+  position: absolute;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.22;
+  pointer-events: none;
+  transform: scale(0);
+}
+
+.petal {
+  position: fixed;
+  z-index: 9999;
+  width: 10px;
+  height: 14px;
+  border-radius: 70% 0 70% 0;
+  background: var(--c, var(--accent));
+  pointer-events: none;
+}
+
+dialog .petal {
+  position: absolute;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toss .arc {
+    animation: toss 1.6s ease-out 1 both;
+  }
+
+  .seal {
+    animation: stamp 0.5s 0.35s var(--ease-out) both;
+  }
+
+  .ink {
+    animation: ink 0.55s ease-out forwards;
+  }
+
+  .petal {
+    animation: petal 0.9s var(--ease-out) forwards;
+  }
+
+  #download[open] {
+    transform-origin: var(--ox, 50%) var(--oy, 50%);
+    animation: pop 0.36s var(--ease-spring) both;
+  }
+
+  #download[open]::backdrop {
+    animation: fade 0.25s ease-out both;
+  }
+
+  #download.closing {
+    animation: pop-out 0.18s ease-in both;
+  }
+
+  #download.closing::backdrop {
+    animation: fade-out 0.18s ease-in both;
+  }
+
+  .dl-list:not([hidden]) > * {
+    animation: rise 0.4s var(--ease-out) both;
+  }
+
+  .dl-list > :nth-child(2) {
+    animation-delay: 70ms;
+  }
+
+  .dl-list > :nth-child(3) {
+    animation-delay: 140ms;
+  }
+
+  @keyframes toss {
+    from {
+      stroke-dashoffset: 120;
+      opacity: 0;
+    }
+  }
+
+  @keyframes stamp {
+    from {
+      opacity: 0;
+      transform: rotate(-6deg) scale(1.9);
+    }
+    60% {
+      opacity: 1;
+      transform: rotate(-6deg) scale(0.94);
+    }
+  }
+
+  @keyframes ink {
+    to {
+      opacity: 0;
+      transform: scale(1);
+    }
+  }
+
+  @keyframes petal {
+    to {
+      opacity: 0;
+      transform: translate(var(--dx), var(--dy)) rotate(var(--r)) scale(1.1);
+    }
+  }
+
+  @keyframes pop {
+    from {
+      opacity: 0;
+      transform: scale(0.86) translateY(14px);
+    }
+  }
+
+  @keyframes pop-out {
+    to {
+      opacity: 0;
+      transform: scale(0.94) translateY(8px);
+    }
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+}
+
+@keyframes draw {
+  from {
+    stroke-dashoffset: 24;
+  }
+}
+
+.facts + p {
+  margin-top: 18px;
 }
