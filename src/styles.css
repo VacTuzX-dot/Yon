@@ -1174,18 +1174,20 @@ header.scrolled {
 
 /* ---------- "⋯" device menu ---------- */
 
-.more {
+/* WHY: not ".more" — Settings' <details className="more"> shares that
+   name and was squeezed to 32 px wide. */
+.menu-button {
   flex: none;
   width: 32px;
   height: 32px;
 }
 
-.more svg {
+.menu-button svg {
   fill: currentColor;
   stroke: none;
 }
 
-.device-row > .more {
+.device-row > .menu-button {
   margin-right: 10px;
 }
 
@@ -1196,7 +1198,7 @@ header.scrolled {
   gap: 2px;
 }
 
-.device .more {
+.device .menu-button {
   width: 28px;
   height: 28px;
 }

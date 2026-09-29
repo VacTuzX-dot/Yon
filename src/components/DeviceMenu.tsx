@@ -29,7 +29,7 @@ export default function DeviceMenu({ name, items }: { name: string; items: MenuI
       <button
         ref={button}
         type="button"
-        className="icon small more"
+        className="icon small menu-button"
         aria-label={`More for ${name}`}
         aria-haspopup="menu"
         popoverTarget={id}
