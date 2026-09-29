@@ -13,6 +13,10 @@
   <a href="CHANGELOG.md">Changelog</a>
 </p>
 
+<p align="center">
+  English | <a href="README.th.md">ไทย</a>
+</p>
+
 Yon (โยน, Thai for "to toss") sends files and folders between your Macs, Windows PCs and phones. No account, no cloud. Files go straight from one device to the other, encrypted. Free and open source (MIT).
 
 [![Yon in 72 seconds: click to watch the film](docs/yon-film.jpg)](https://yon.meo.in.th/film/)
