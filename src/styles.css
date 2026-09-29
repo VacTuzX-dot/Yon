@@ -208,7 +208,7 @@ button.avatar:disabled {
   opacity: 0.45;
 }
 
-button.avatar:disabled:has(.ring) {
+button.avatar:disabled:has(.progress-ring) {
   opacity: 1; /* busy, not unavailable */
 }
 
@@ -374,7 +374,7 @@ button.avatar:disabled:has(.ring) {
   cursor: default;
 }
 
-.row-main:disabled:not(:has(.ring)) .row-text {
+.row-main:disabled:not(:has(.progress-ring)) .row-text {
   opacity: 0.6;
 }
 
@@ -428,7 +428,10 @@ button.avatar:disabled:has(.ring) {
 
 /* ---------- progress ring ---------- */
 
-.ring {
+/* WHY: not ".ring" — that is also a Tailwind utility (a 1px box-shadow),
+   which drew a square around the circle. */
+
+.progress-ring {
   position: absolute;
   inset: -7px;
   width: calc(100% + 14px);
@@ -436,7 +439,7 @@ button.avatar:disabled:has(.ring) {
   pointer-events: none;
 }
 
-.ring circle {
+.progress-ring circle {
   fill: none;
   stroke-width: 4;
 }
@@ -451,7 +454,7 @@ button.avatar:disabled:has(.ring) {
   transition: stroke-dashoffset 120ms linear;
 }
 
-.ring.spinning .ring-spin {
+.progress-ring.spinning .ring-spin {
   transform-origin: 50px 50px;
   animation: spin 1.1s linear infinite;
 }
@@ -484,7 +487,7 @@ button.avatar:disabled:has(.ring) {
   border: 1px solid var(--line);
 }
 
-.tray .ring {
+.tray .progress-ring {
   inset: -5px;
   width: calc(100% + 10px);
   height: calc(100% + 10px);
@@ -900,7 +903,7 @@ details .field {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ring.spinning .ring-spin {
+  .progress-ring.spinning .ring-spin {
     animation: none;
   }
   .ring-bar {
