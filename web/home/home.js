@@ -72,29 +72,53 @@ function pick(os) {
   for (const a of dialog.querySelectorAll("a.started")) a.classList.remove("started");
 }
 
+// The field lives inside the box that asked, so it also works in the open
+// dialog (everything behind a modal dialog is inert).
+function legacyCopy(text, host) {
+  const field = document.createElement("textarea");
+  field.value = text;
+  field.readOnly = true;
+  field.className = "clip";
+  host.append(field);
+  field.select();
+  field.setSelectionRange(0, text.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch {
+    // fall through: the tip tells the visitor to copy by hand
+  }
+  field.remove();
+  return ok;
+}
+
 async function copy(button) {
-  const text = button.closest(".code").querySelector("code").textContent.trim();
+  const box = button.closest(".code");
+  const code = box.querySelector("code");
+  const tip = box.querySelector(".copy-tip");
+  const text = code.textContent.trim();
   let ok = false;
   try {
     await navigator.clipboard.writeText(text);
     ok = true;
   } catch {
-    // Older browsers, or a page without clipboard access: select the text so
-    // the shortcut works, and try the legacy command.
+    ok = legacyCopy(text, box);
+  }
+  if (!ok) {
+    // Leave the command selected, ready for Ctrl/⌘ C.
     const range = document.createRange();
-    range.selectNodeContents(button.closest(".code").querySelector("code"));
+    range.selectNodeContents(code);
     getSelection().removeAllRanges();
     getSelection().addRange(range);
-    ok = document.execCommand && document.execCommand("copy");
   }
-  const label = button.querySelector(".copy-label");
-  label.textContent = ok ? "Copied" : "Press Ctrl/⌘ C";
+  tip.textContent = ok ? "Copied" : "Couldn't copy. Select the command and press Ctrl/⌘ C.";
+  tip.classList.add("show");
   button.classList.toggle("copied", ok);
   clearTimeout(button.timer);
   button.timer = setTimeout(() => {
-    label.textContent = "Copy";
+    tip.classList.remove("show");
     button.classList.remove("copied");
-  }, 2000);
+  }, ok ? 2000 : 5000);
 }
 
 if (dialog && dialog.showModal) {

@@ -438,66 +438,75 @@ p {
   font-weight: 700;
 }
 
-/* Code with a Copy button */
+/* A command in one box, with a Copy button at its right end. The command
+   wraps instead of scrolling, so all of it is always visible. */
 .code {
-  margin: 0 0 16px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: var(--code-bg);
-  color: var(--code-ink);
-}
-
-.code figcaption {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 6px 2px 16px;
-  border-bottom: 1px solid rgb(255 255 255 / 0.08);
-  font: 13px/1 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  color: rgb(236 232 223 / 0.6);
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 4px 4px 4px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--ink);
 }
 
 .code pre {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  overflow-x: auto;
-  padding: 14px 16px;
+  padding: 8px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font: 14px/1.5 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 }
 
 .code pre::before {
   content: "$ ";
-  color: var(--accent);
+  color: var(--muted);
   user-select: none;
+}
+
+.c-cmd {
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
+.c-op {
+  color: var(--shu);
 }
 
 .copy {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 0 12px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   overflow: hidden;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: none;
-  color: var(--code-ink);
-  font: 600 13px/1 system-ui, sans-serif;
+  color: var(--muted);
   cursor: pointer;
-  transition: background 0.2s, transform 0.15s var(--ease-out);
+  transition: background 0.2s, color 0.2s, transform 0.15s var(--ease-out);
 }
 
 .copy:hover {
-  background: rgb(255 255 255 / 0.1);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
 }
 
 .copy:active {
-  transform: scale(0.94);
+  transform: scale(0.92);
 }
 
 .copy svg {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   fill: none;
   stroke: currentColor;
   stroke-width: 2;
@@ -511,13 +520,55 @@ p {
 }
 
 .copy.copied {
-  color: #8fe0a4;
+  color: #1f8a4c;
 }
 
 .copy.copied .ic-check {
   display: block;
   stroke-dasharray: 24;
   animation: draw 0.35s var(--ease-out) both;
+}
+
+/* A small note above the button: "Copied", or what to do if copying failed. */
+.copy-tip {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  max-width: 260px;
+  padding: 5px 10px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 13px;
+  line-height: 1.3;
+  opacity: 0;
+  transform: translateY(4px);
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s var(--ease-out);
+}
+
+.copy-tip.show {
+  opacity: 1;
+  transform: none;
+}
+
+/* Off-screen field for browsers without the async clipboard. 16px keeps iOS from zooming. */
+.clip {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  font-size: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .copy.copied {
+    color: #6fd39a;
+  }
 }
 
 /* Footer: a hem of waves (seigaiha) */
@@ -775,7 +826,7 @@ footer a {
 }
 
 .dl-list .code {
-  margin: 4px 0 0;
+  margin: 0;
 }
 
 .dl-status {
