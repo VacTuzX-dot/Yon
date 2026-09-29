@@ -100,6 +100,12 @@ impl Settings {
     /// Load from `data_dir`; missing or corrupt file → defaults.
     pub fn load(data_dir: &Path, downloads: &Path) -> Self {
         let defaults = Self::defaults(downloads);
+        // WHY: 0.2.2 and older wrote this file world-readable (0644).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(data_dir.join(FILE), fs::Permissions::from_mode(0o600));
+        }
         let text = match fs::read_to_string(data_dir.join(FILE)) {
             Ok(t) => t,
             Err(_) => return defaults,
@@ -173,13 +179,24 @@ impl Settings {
     }
 
     /// Write atomically (temp file + rename) so a crash can't leave half a file.
+    /// Owner-only (0600 on Unix): the file holds every phone's pairing key and
+    /// the relay room secret, as sensitive as the identity key.
     pub fn save(&self, data_dir: &Path) -> io::Result<()> {
+        use std::io::Write;
         fs::create_dir_all(data_dir)?;
         let tmp = data_dir.join(format!("{FILE}.tmp"));
-        fs::write(
-            &tmp,
-            serde_json::to_vec_pretty(self).map_err(io::Error::other)?,
-        )?;
+        // A leftover from a crash; create_new below refuses anything else.
+        let _ = fs::remove_file(&tmp);
+        let mut opts = fs::OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut f = opts.open(&tmp)?;
+        f.write_all(&serde_json::to_vec_pretty(self).map_err(io::Error::other)?)?;
+        f.sync_all()?;
         fs::rename(tmp, data_dir.join(FILE))
     }
 }
@@ -596,6 +613,27 @@ mod tests {
             None
         );
         assert_eq!(saves.get(), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn settings_file_is_owner_only() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = crate::identity::tests::temp_dir("settings-mode");
+        let file = dir.join(FILE);
+        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        // An old world-readable file is tightened on load…
+        fs::write(&file, b"{}").unwrap();
+        fs::set_permissions(&file, fs::Permissions::from_mode(0o644)).unwrap();
+        let s = Settings::load(&dir, &dir);
+        assert_eq!(mode(&file), 0o600);
+        // …and every save writes 0600, also over a stale temp file.
+        fs::write(dir.join(format!("{FILE}.tmp")), b"stale").unwrap();
+        s.save(&dir).unwrap();
+        assert_eq!(mode(&file), 0o600);
+        assert!(!dir.join(format!("{FILE}.tmp")).exists());
+        assert_eq!(Settings::load(&dir, &dir).port, s.port);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

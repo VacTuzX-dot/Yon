@@ -1,6 +1,6 @@
 import { afterEach, expect, test } from "bun:test";
 import type { Server } from "bun";
-import { CLOSE, DEFAULT_LIMITS, type Limits, roomOf, startRelay } from "./relay";
+import { CLOSE, DEFAULT_LIMITS, type Limits, limitKey, roomOf, startRelay } from "./relay";
 
 const SECRET = "ab".repeat(32);
 const OTHER = "cd".repeat(32);
@@ -143,4 +143,35 @@ test("limits: frame size, bandwidth, connections per IP", async () => {
   const res = await fetch(`${base.replace("ws", "http")}/phone/${roomOf(SECRET)}`);
   expect(res.status).toBe(429);
   c.ws.close();
+});
+
+test("per-address limits group IPv6 by /64", () => {
+  expect(limitKey("203.0.113.9")).toBe("203.0.113.9");
+  expect(limitKey("::ffff:203.0.113.9")).toBe("203.0.113.9");
+  // Every address in one /64 is the same key, however it's written.
+  const a = limitKey("2001:db8:0:1::1");
+  expect(limitKey("2001:0db8:0000:0001:ffff:ffff:ffff:ffff")).toBe(a);
+  expect(limitKey("2001:DB8:0:1:abcd::9")).toBe(a);
+  expect(a).toBe("2001:db8:0:1::/64");
+  expect(limitKey("2001:db8:0:2::1")).not.toBe(a);
+  expect(limitKey("::1")).toBe("0:0:0:0::/64");
+});
+
+test("limits computer connections per address, before they authenticate", async () => {
+  const base = start({ computersPerIp: 2 });
+  const a = client(`${base}/computer`);
+  const b = client(`${base}/computer`);
+  await a.opened();
+  await b.opened();
+  // A third computer socket from the same address is refused at upgrade.
+  const res = await fetch(`${base.replace("ws", "http")}/computer`, {
+    headers: { Upgrade: "websocket", Connection: "Upgrade", "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==", "Sec-WebSocket-Version": "13" },
+  });
+  expect(res.status).toBe(429);
+  // Closing one frees its slot.
+  a.ws.close();
+  await a.closedWith();
+  const c = await computer(base, OTHER);
+  c.ws.close();
+  b.ws.close();
 });
