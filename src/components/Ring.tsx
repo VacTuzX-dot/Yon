@@ -7,15 +7,19 @@ export default function Ring({ progress }: { progress: number | null }) {
   return (
     <svg className={`ring${progress === null ? " spinning" : ""}`} viewBox="0 0 100 100" aria-hidden>
       <circle className="ring-track" cx="50" cy="50" r={R} />
-      <circle
-        className="ring-bar"
-        cx="50"
-        cy="50"
-        r={R}
-        strokeDasharray={C}
-        strokeDashoffset={offset}
-        transform="rotate(-90 50 50)"
-      />
+      {/* WHY: spin this group, not the <svg>. A CSS-rotated <svg> becomes its
+          own layer in WebKit, and its square edge showed around the circle. */}
+      <g className="ring-spin">
+        <circle
+          className="ring-bar"
+          cx="50"
+          cy="50"
+          r={R}
+          strokeDasharray={C}
+          strokeDashoffset={offset}
+          transform="rotate(-90 50 50)"
+        />
+      </g>
     </svg>
   );
 }
