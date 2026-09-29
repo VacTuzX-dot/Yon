@@ -1,7 +1,7 @@
 // Yon Share extension: Finder/any app "Share → Yon".
-// It has no UI of its own. It collects the shared file URLs and opens them
-// with the containing Yon.app — the same path as Finder's "Open With → Yon",
-// where Yon shows its device picker. Nothing is sent from here.
+// It has no UI of its own. It collects the shared file URLs and passes them
+// as CLI arguments to the containing Yon.app, where Yon shows its device picker.
+// Nothing is sent from here.
 
 import Cocoa
 import UniformTypeIdentifiers
@@ -36,6 +36,23 @@ final class ShareViewController: NSViewController {
 
     private func handOff(_ urls: [URL]) {
         guard !urls.isEmpty, let app = containingApp() else { return finish() }
+        let config = NSWorkspace.OpenConfiguration()
+        config.activates = true
+        config.createsNewApplicationInstance = true
+        config.arguments = urls.map(\.path)
+        // WHY: macOS refuses to open a Windows .exe as a document with any app
+        // ("incorrect executable format"). As arguments the paths always get
+        // through: the new Yon hands them to the running one (single-instance)
+        // or, if Yon wasn't running, reads them at startup.
+        NSWorkspace.shared.openApplication(at: app, configuration: config) { _, error in
+            guard let error else { return DispatchQueue.main.async { self.finish() } }
+            NSLog("YonShare: could not pass files as arguments: \(error.localizedDescription)")
+            self.openAsDocuments(urls, with: app)
+        }
+    }
+
+    /// The pre-0.2.3 hand-off (like "Open With → Yon"), kept as a fallback.
+    private func openAsDocuments(_ urls: [URL], with app: URL) {
         let config = NSWorkspace.OpenConfiguration()
         config.activates = true
         NSWorkspace.shared.open(urls, withApplicationAt: app, configuration: config) { _, error in

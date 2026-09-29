@@ -13,7 +13,9 @@ Known problems are in red boxes, with the version that fixes them and what to do
 ### Fixed
 
 - Settings → Phones: "What the relay can see" was squeezed to one word per line, with **Pair a phone** drawn on top of it (since 0.2.2).
-- macOS: a square outline turned around a device while waiting for the other side to accept.
+- macOS: a square outline showed around a device while waiting for the other side to accept.
+- macOS: **Share → Yon** failed for Windows programs (`.exe`) with "not supported on this Mac": macOS 27 won't open a `.exe` as a document in any app. The Share extension now passes files to Yon another way. **Open With → Yon** and dropping a `.exe` on the Dock icon still hit that macOS rule; drop it on the Yon window instead.
+- Dragging files: the device under the pointer gets one clear ring, and the label names it ("Drop to send to …").
 - The Mac install script stopped with `name…: unbound variable` in Terminal windows using a UTF-8 language setting (macOS's built-in bash). Nothing was installed.
 
 ## 0.2.2 — 2026-09-28
