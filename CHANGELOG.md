@@ -2,7 +2,7 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
-## 0.2.3 — unreleased
+## 0.2.3 — 2026-09-29
 
 ### New
 
