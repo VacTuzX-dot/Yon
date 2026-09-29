@@ -26,3 +26,8 @@ dist-ssr
 # Built phone page for GitHub Pages (scripts/build-link.ts)
 site/
 site-pages/
+
+# Rendered film (scripts/render-film.ts) and its full-quality soundtrack
+# (scripts/film_music.py regenerates it; the web uses web/film/film.mp3).
+dist-film/
+web/film/film.wav

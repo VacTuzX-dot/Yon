@@ -114,6 +114,10 @@ h1 {
   filter: brightness(1.05);
 }
 
+.watch {
+  font-weight: 600;
+}
+
 .note {
   color: var(--muted);
   font-size: 15px;

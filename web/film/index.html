@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Yon in 72 seconds</title>
+    <meta name="description" content="How Yon tosses files between your devices, in a 72-second film drawn live with WebGL." />
+    <link rel="icon" href="../icon.png" />
+    <link rel="stylesheet" href="film.css" />
+    <script src="film.js" defer></script>
+  </head>
+  <body>
+    <header class="top">
+      <a class="mark" href="../"><img src="../icon.png" alt="" width="28" height="28" />Yon</a>
+      <a href="../">Back to yon.meo.in.th</a>
+    </header>
+    <main>
+      <div class="film" tabindex="0" aria-label="Yon in 72 seconds, a film">
+        <div class="frame">
+          <canvas class="film-gl" aria-hidden="true"></canvas>
+          <canvas class="film-cap" aria-hidden="true"></canvas>
+          <p class="film-fallback">This film needs WebGL. <a href="https://github.com/VacTuzX-dot/Yon">Read about Yon on GitHub</a> instead.</p>
+        </div>
+        <div class="controls">
+          <button type="button" class="film-play" aria-label="Play">Play</button>
+          <input class="film-seek" type="range" min="0" max="72" step="0.01" value="0" aria-label="Position in the film" />
+          <span class="film-time">0:00 / 1:12</span>
+        </div>
+      </div>
+      <p class="about">
+        Drawn live in your browser with WebGL; the music is algorithmic, made by a Python script. Both are in
+        <a href="https://github.com/VacTuzX-dot/Yon">the repository</a>.
+      </p>
+    </main>
+  </body>
+</html>

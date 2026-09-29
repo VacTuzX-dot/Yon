@@ -10,6 +10,7 @@ Known problems are in red boxes, with the version that fixes them and what to do
 - **Intel Macs** and **Windows on ARM** (Snapdragon PCs) get their own downloads. The Mac install script picks the right one.
 - **Activity** (clock button, top right): everything sent and received since Yon started, with **Show in Finder** for received files. Kept in memory only; file names are never saved.
 - Incoming transfers show as small notifications at the top right that go away on their own a few seconds after they finish.
+- **Yon in 72 seconds** (yon.meo.in.th/film): a film of how Yon works, drawn live with WebGL, with an algorithmic soundtrack from a Python script. The same frames render to an MP4 (`bun run scripts/render-film.ts`).
 - **yon.meo.in.th**: a project page, and the phone page for Reach from anywhere now lives at `yon.meo.in.th/phonelink` on its own origin. Phones paired with the old GitHub Pages address are moved there automatically.
 - Every CI run checks Rust and JavaScript dependencies for known vulnerabilities (`cargo audit`, `bun audit`) and that Yon still builds for Intel Macs and Windows on ARM.
 

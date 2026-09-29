@@ -50,6 +50,13 @@ await Bun.write(`${phone}/link.css`, Bun.file("web/link.css"));
 await Bun.write(`${phone}/icon.png`, icon);
 
 for (const f of ["index.html", "home.css", "home.js", "toss.wav"]) await Bun.write(`${site}/${f}`, Bun.file(`web/home/${f}`));
+// The film (web/film/): plain WebGL + an algorithmic soundtrack.
+for (const f of ["index.html", "film.css", "film.mp3"]) await Bun.write(`${site}/film/${f}`, Bun.file(`web/film/${f}`));
+const film = await Bun.build({ entrypoints: ["web/film/film.ts"], outdir: `${site}/film`, naming: "film.js", target: "browser", minify: true });
+if (!film.success) {
+  for (const log of film.logs) console.error(log);
+  process.exit(1);
+}
 // The hero animation: plain WebGL, no dependencies (web/home/toss.ts).
 const toss = await Bun.build({ entrypoints: ["web/home/toss.ts"], outdir: site, naming: "toss.js", target: "browser", minify: true });
 if (!toss.success) {

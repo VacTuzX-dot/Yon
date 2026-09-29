@@ -1,0 +1,30 @@
+{
+  "fps": 60,
+  "width": 1920,
+  "height": 1080,
+  "duration": 72,
+  "bpm": 100,
+  "scenes": [
+    { "id": "toss", "start": 0, "end": 10, "caption": "Yon — โยน, to toss.", "sub": "Send files to the devices around you." },
+    { "id": "nearby", "start": 10, "end": 22, "caption": "Finds what's nearby.", "sub": "No account. No cloud. Just your Wi-Fi." },
+    { "id": "send", "start": 22, "end": 38, "caption": "Sealed, chunk by chunk.", "sub": "Mutual TLS 1.3 — and every file checked with SHA-256 on arrival." },
+    { "id": "folders", "start": 38, "end": 50, "caption": "Whole folders. Any size.", "sub": "A 1 GB video uses a few MB of memory." },
+    { "id": "phones", "start": 50, "end": 62, "caption": "Phones too. From anywhere.", "sub": "Pair once with a QR code. The relay only sees sealed data." },
+    { "id": "open", "start": 62, "end": 72, "caption": "Free and open source.", "sub": "yon.meo.in.th · MIT · macOS and Windows" }
+  ],
+  "cues": [
+    { "t": 1.0, "kind": "swell", "note": "logo assembles" },
+    { "t": 12.0, "kind": "ping", "note": "first discovery pulse" },
+    { "t": 14.4, "kind": "ping", "note": "second pulse" },
+    { "t": 16.8, "kind": "ping", "note": "third pulse, devices light up" },
+    { "t": 24.0, "kind": "handshake", "note": "two keys meet (TLS)" },
+    { "t": 26.0, "kind": "stream-start", "note": "chunks leave the left device" },
+    { "t": 34.0, "kind": "check", "note": "file whole again, check ring" },
+    { "t": 40.0, "kind": "stream-start", "note": "folder unfolds and streams" },
+    { "t": 47.0, "kind": "check", "note": "folder arrives" },
+    { "t": 52.0, "kind": "qr", "note": "QR code forms and is scanned" },
+    { "t": 56.0, "kind": "stream-start", "note": "sealed blobs pass the relay" },
+    { "t": 64.0, "kind": "swell", "note": "logo returns" },
+    { "t": 70.0, "kind": "end", "note": "fade out" }
+  ]
+}

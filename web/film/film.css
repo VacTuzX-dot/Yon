@@ -1,0 +1,122 @@
+:root {
+  --bg: #13151b;
+  --ink: #eceef2;
+  --muted: #979eae;
+  --line: #323741;
+  --accent: #f2b53a;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+}
+
+a {
+  color: var(--accent);
+}
+
+.top,
+main {
+  width: min(1200px, 100% - 32px);
+  margin-inline: auto;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 18px 0;
+}
+
+.top a {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+}
+
+.film:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #121419;
+  border: 1px solid var(--line);
+}
+
+.frame canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.film-fallback {
+  display: none;
+  position: absolute;
+  inset: 0;
+  place-content: center;
+  text-align: center;
+  padding: 24px;
+}
+
+.film.no-gl .film-fallback {
+  display: grid;
+}
+
+.film.no-gl .controls {
+  display: none;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 2px;
+}
+
+.film-play {
+  min-width: 96px;
+  padding: 8px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1e222b;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.film-seek {
+  flex: 1;
+  accent-color: var(--accent);
+}
+
+.film-time {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.about {
+  color: var(--muted);
+  font-size: 14px;
+}
