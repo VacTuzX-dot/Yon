@@ -132,3 +132,10 @@ jobs:
 
       - name: bun audit
         run: bun audit
+
+      # install.sh runs under macOS's /bin/bash 3.2, which misreads a
+      # multibyte character after "$var" in a UTF-8 locale.
+      - name: install.sh is ASCII and parses
+        run: |
+          ! LC_ALL=C grep -n '[^[:print:][:space:]]' install.sh
+          bash -n install.sh

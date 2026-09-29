@@ -18,6 +18,8 @@
 # update's signature against the key built into Yon.
 
 # Everything runs inside main, so a download cut off halfway runs nothing.
+# Keep this file ASCII: macOS's /bin/bash 3.2 in a UTF-8 locale reads a
+# multibyte character right after "$var" as part of the variable's name.
 main() {
   set -euo pipefail
 
@@ -32,19 +34,19 @@ main() {
   fi
 
   [[ "$(uname -s)" == Darwin ]] || die "this script is for macOS. On Windows, download the installer from https://github.com/$repo/releases"
-  # WHY: sysctl, not uname -m — a Terminal running under Rosetta reports
+  # WHY: sysctl, not uname -m - a Terminal running under Rosetta reports
   # x86_64 on an Apple Silicon Mac.
   local arch=x64
   [[ "$(sysctl -n hw.optional.arm64 2>/dev/null)" == 1 ]] && arch=aarch64
   [[ -d "$dir" && -w "$dir" ]] || die "can't write to $dir. Try: YON_INSTALL_DIR=~/Applications (create it first)"
   if pgrep -f "$dir/Yon.app/Contents/MacOS/" >/dev/null; then
-    die "Yon is running. Quit it (menu bar icon → Quit) and run this again."
+    die "Yon is running. Quit it (menu bar icon -> Quit) and run this again."
   fi
 
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
 
-  say "Checking the release…"
+  say "Checking the release..."
   curl -fsSL --proto '=https' --tlsv1.2 -o "$tmp/SHA256SUMS.txt" "$base/SHA256SUMS.txt"
   local line name sum
   line="$(grep -E "^[0-9a-f]{64}  Yon_[0-9]+\.[0-9]+\.[0-9]+_${arch}\.app\.tar\.gz\$" "$tmp/SHA256SUMS.txt")" \
@@ -53,12 +55,12 @@ main() {
   sum="${line%%  *}"
   name="${line#*  }"
 
-  say "Downloading $name…"
+  say "Downloading ${name}..."
   curl -fL --proto '=https' --tlsv1.2 --progress-bar -o "$tmp/$name" "$base/$name"
   [[ "$(shasum -a 256 "$tmp/$name" | cut -d' ' -f1)" == "$sum" ]] \
     || die "the download doesn't match SHA256SUMS.txt. Nothing was installed."
 
-  # Only Yon.app/… inside the archive: no absolute paths, no '..'.
+  # Only Yon.app/... inside the archive: no absolute paths, no '..'.
   if tar -tzf "$tmp/$name" | grep -qvE '^Yon\.app(/|$)' || tar -tzf "$tmp/$name" | grep -qE '(^|/)\.\.(/|$)'; then
     die "unexpected files in the archive. Nothing was installed."
   fi
