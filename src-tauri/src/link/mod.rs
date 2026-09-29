@@ -1091,7 +1091,10 @@ pub fn pairing_url(host: &str, phone: &Phone) -> String {
 }
 
 /// Where the phone page is published for use through the relay (ADR-003).
-pub const PAGE_URL: &str = "https://vactuzx-dot.github.io/Yon/";
+/// WHY: its own origin (website/, our server), not vactuzx-dot.github.io,
+/// which every GitHub Pages project of the account shares — the page keeps
+/// the pairing key in localStorage. The old address forwards here.
+pub const PAGE_URL: &str = "https://yon.meo.in.th/phonelink/";
 
 /// Pairing URL for the relay page: works on any network. `relay_url` is the
 /// wss:// address from settings; the page gets its host after the `@`.

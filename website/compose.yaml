@@ -1,0 +1,24 @@
+# https://yon.meo.in.th static site. Deployed by .github/workflows/website.yml,
+# which builds yon-site:<git sha> and runs website/deploy.sh on the server.
+# By hand (with site/ copied to ./public):  YON_SITE_TAG=dev docker compose up -d --build
+# Reached only through Cloudflare Tunnel (https://<SITE_HOST> → 127.0.0.1:8788).
+
+# WHY: fixed project name — each release lives in its own directory, and a
+# per-directory project would start a second container fighting for :8788.
+name: yon-site
+
+services:
+  site:
+    image: yon-site:${YON_SITE_TAG:?YON_SITE_TAG is required}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:8788:8788" # never 0.0.0.0: public only via the tunnel
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 64m
+    restart: unless-stopped

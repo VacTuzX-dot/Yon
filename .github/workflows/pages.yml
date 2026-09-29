@@ -1,8 +1,10 @@
-name: Phone page
+name: Phone page (old address)
 
-# Publishes the Yon Link phone page (site/) to GitHub Pages. Only from
-# release tags (or by hand), so the page phones load matches a release
-# (ADR-003: whoever controls this deploy controls the page).
+# The phone page now lives at https://yon.meo.in.th/phonelink/ (website.yml).
+# GitHub Pages keeps serving vactuzx-dot.github.io/Yon/ only as a hand-off
+# (site-pages/): phones paired there move to the new address with their
+# pairing, and the key the old page cached is removed. Only from release
+# tags (or by hand) — whoever controls this deploy controls that hand-off.
 on:
   push:
     tags: ["v*"]
@@ -31,7 +33,7 @@ jobs:
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          path: site
+          path: site-pages
 
   deploy:
     needs: build

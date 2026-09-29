@@ -26,7 +26,8 @@ Link protocol itself is covered by threat-model-yon-link.md.
 | Stranger joins a room and talks to the computer | S | Room id alone gets nothing: `/hello` needs a known pair id, everything after needs K |
 | Someone takes over a room to pose as the computer | S/D | Serving a room needs `R` with `SHA-256(R)` = room id; one computer per room; phones verify every reply with K anyway |
 | Relay used as free bandwidth / flood | D | Frame size cap (≈1.1 MiB), per-connection and per-IP rate limits, connection caps, idle timeouts, rooms exist only while a computer is connected |
-| Malicious page served from GitHub Pages | S/I/E | CI-only deploys from tagged commits, SRI on the script, branch protection; residual: repo compromise |
+| Malicious page served from the website (yon.meo.in.th) | S/I/E | CI-only deploys from tagged commits with a required reviewer, strict CSP headers and no third-party code on the origin; residual: repo, CI or server compromise. SRI only guards against a changed script on the same host, not a compromised host |
+| Another page on the same origin reads the pairing key | I | 2026-09-29: moved off vactuzx-dot.github.io (shared by every Pages project of the account) to its own origin; the only other page there is the project page, which loads no third-party code (CSP `script-src 'self'`); the old address only forwards and deletes the cached key |
 | Metadata exposure (IPs, timing, sizes) | I | Accepted; documented; self-hostable relay |
 | Replay through the relay | T | Existing replay window per session |
 

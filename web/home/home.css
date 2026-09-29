@@ -1,0 +1,307 @@
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --ink: #1e222b;
+  --muted: #5d6372;
+  --line: #e1e4ea;
+  --accent: #e8a317; /* marigold (ดาวเรือง) */
+  --accent-strong: #b87d05; /* marigold dark enough for links on --bg */
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #181b21;
+    --surface: #22262e;
+    --ink: #eceef2;
+    --muted: #979eae;
+    --line: #323741;
+    --accent: #f2b53a;
+    --accent-strong: #f2b53a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 17px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans Thai", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent-strong);
+  text-underline-offset: 3px;
+}
+
+a:focus-visible,
+.button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.top,
+main,
+footer {
+  width: min(720px, 100% - 32px);
+  margin-inline: auto;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 0;
+}
+
+.top a {
+  color: var(--ink);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.hero {
+  padding: 40px 0 8px;
+}
+
+h1 {
+  margin: 0;
+  max-width: 14ch;
+  font-size: clamp(38px, 7vw, 64px);
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  font-weight: 750;
+}
+
+.lede {
+  max-width: 34em;
+  margin: 20px 0 0;
+  font-size: 19px;
+  color: var(--muted);
+}
+
+.cta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+  margin-top: 28px;
+}
+
+.button {
+  display: inline-block;
+  padding: 12px 22px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1e222b;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.button:hover {
+  filter: brightness(1.05);
+}
+
+.note {
+  color: var(--muted);
+  font-size: 15px;
+}
+
+/* The one picture: a file tossed from one laptop to the other. With WebGL
+   (toss.ts) the file becomes a stream of chunks over the SVG. */
+.stage {
+  position: relative;
+  margin: 36px 0 12px;
+}
+
+.toss {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.toss-gl {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none; /* toss.ts sizes it to the SVG */
+}
+
+.toss.live > g:not(.device) {
+  display: none; /* the static file; the chunks replace it */
+}
+
+.toss .landed,
+.toss .landed-check {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+
+/* --phase (0..1) comes from toss.ts: the check lights up once every chunk
+   has landed, then fades before the next toss. */
+.toss.live .landed,
+.toss.live .landed-check {
+  opacity: clamp(0, (var(--phase, 0) - 0.9) * 25, 1);
+}
+
+.beats {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+/* The step being shown lights up in step with the animation. */
+/* No transition: --phase already moves smoothly every frame. */
+.stage.live .beats li {
+  --on: 0;
+  color: color-mix(in oklab, var(--accent-strong) calc(var(--on) * 100%), var(--muted));
+}
+
+.stage.live .beats li:nth-child(1) {
+  --on: clamp(0, (0.4 - var(--phase, 0)) * 20, 1);
+}
+
+.stage.live .beats li:nth-child(2) {
+  --on: min(clamp(0, (var(--phase, 0) - 0.3) * 20, 1), clamp(0, (0.88 - var(--phase, 0)) * 20, 1));
+}
+
+.stage.live .beats li:nth-child(3) {
+  --on: clamp(0, (var(--phase, 0) - 0.86) * 20, 1);
+}
+
+.beats li:nth-child(2) {
+  text-align: center;
+}
+
+.beats li:last-child {
+  text-align: right;
+}
+
+.sound {
+  position: absolute;
+  top: 0;
+  right: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sound[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.toss .device rect,
+.toss .device path {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 3;
+  stroke-linecap: round;
+  opacity: 0.8;
+}
+
+.toss .arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-dasharray: 2 12;
+  stroke-linecap: round;
+}
+
+.toss .file {
+  fill: var(--accent);
+}
+
+.toss .fold {
+  fill: var(--ink);
+  opacity: 0.35;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .toss .arc {
+    animation: toss 1.6s ease-out 1 both;
+  }
+  @keyframes toss {
+    from {
+      stroke-dashoffset: 120;
+      opacity: 0;
+    }
+  }
+}
+
+section {
+  padding: 28px 0;
+  border-top: 1px solid var(--line);
+}
+
+.hero {
+  border-top: 0;
+}
+
+h2 {
+  margin: 0 0 12px;
+  font-size: 24px;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin: 0 0 12px;
+  max-width: 38em;
+}
+
+.facts,
+.steps {
+  margin: 0;
+  padding-left: 1.2em;
+  max-width: 38em;
+}
+
+.facts li,
+.steps li {
+  margin-bottom: 10px;
+}
+
+pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  font-size: 14px;
+}
+
+footer {
+  padding: 28px 0 48px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 15px;
+}
+
+footer a {
+  color: inherit;
+}

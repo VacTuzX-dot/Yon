@@ -25,3 +25,4 @@ dist-ssr
 
 # Built phone page for GitHub Pages (scripts/build-link.ts)
 site/
+site-pages/

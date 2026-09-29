@@ -10,6 +10,7 @@ Known problems are in red boxes, with the version that fixes them and what to do
 - **Intel Macs** and **Windows on ARM** (Snapdragon PCs) get their own downloads. The Mac install script picks the right one.
 - **Activity** (clock button, top right): everything sent and received since Yon started, with **Show in Finder** for received files. Kept in memory only; file names are never saved.
 - Incoming transfers show as small notifications at the top right that go away on their own a few seconds after they finish.
+- **yon.meo.in.th**: a project page, and the phone page for Reach from anywhere now lives at `yon.meo.in.th/phonelink` on its own origin. Phones paired with the old GitHub Pages address are moved there automatically.
 - Every CI run checks Rust and JavaScript dependencies for known vulnerabilities (`cargo audit`, `bun audit`) and that Yon still builds for Intel Macs and Windows on ARM.
 
 ### Fixed
@@ -17,6 +18,7 @@ Known problems are in red boxes, with the version that fixes them and what to do
 - Settings → Phones: "What the relay can see" was squeezed to one word per line, with **Pair a phone** drawn on top of it (since 0.2.2).
 - macOS: a square outline showed around a device while waiting for the other side to accept.
 - macOS: **Share → Yon** failed for Windows programs (`.exe`) with "not supported on this Mac": macOS 27 won't open a `.exe` as a document in any app. The Share extension now passes files to Yon another way. **Open With → Yon** and dropping a `.exe` on the Dock icon still hit that macOS rule; drop it on the Yon window instead.
+- Security: the relay's per-address limits now count an IPv6 /64 as one address, and each address can hold at most 4 computer connections, so one machine can no longer fill the relay's rooms. `settings.json` (phone pairing keys, relay room secret) is now readable by your user only.
 - Dragging files: the device under the pointer gets one clear ring, and the label names it ("Drop to send to …").
 - The Mac install script stopped with `name…: unbound variable` in Terminal windows using a UTF-8 language setting (macOS's built-in bash). Nothing was installed.
 

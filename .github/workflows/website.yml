@@ -1,0 +1,108 @@
+name: Website
+
+# Deploys https://yon.meo.in.th (website/serve.ts serving the site/ that
+# `bun run build:link` builds) to the production server over Tailscale, then
+# website/deploy.sh builds the image there, checks it (health, the phone
+# page's CSP header, the public hostname) and rolls back on failure.
+#
+# Needs, in the "production" environment (with required reviewers):
+#   secrets  SSH_PRIVATE_KEY, SSH_USER, HOST_IP (the Tailscale IP pinned in
+#            deploy/known_hosts), TS_OAUTH_CLIENT_ID, TS_OAUTH_SECRET
+#   variable SITE_HOST (e.g. yon.meo.in.th — no scheme, no path)
+# The server's host key is public and pinned in deploy/known_hosts; SSH
+# refuses any other key (or any other HOST_IP) until a reviewed commit.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# WHY: two deploys at once would race on the container and the tag files.
+concurrency:
+  group: website-production
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.0
+      - run: bun install --frozen-lockfile
+      - run: bun test website/
+      - run: bun run build:link
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      GIT_SHA: ${{ github.sha }}
+      SITE_HOST: ${{ vars.SITE_HOST }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.0
+      - run: bun install --frozen-lockfile
+      - run: bun run build:link
+
+      - name: Check inputs
+        run: |
+          [[ "$GIT_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Invalid Git SHA"; exit 1; }
+          [[ "$SITE_HOST" =~ ^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$ ]] || { echo "SITE_HOST is missing or invalid"; exit 1; }
+          [ -f site/index.html ] && [ -f site/phonelink/index.html ] || { echo "site/ was not built"; exit 1; }
+
+      # The OAuth client only lets this runner join the tailnet; it never
+      # reaches the server or the site container.
+      - uses: tailscale/github-action@d1b6cd204f8dceda5b3eaad7f1f767be390056cd # v4.2.0
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:cicd
+
+      - name: SSH key and pinned host key
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          cp deploy/known_hosts ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+      # WHY: tar over one ssh connection — site/ is a tree (phonelink/), and it
+      # lands as public/ next to the files the Dockerfile copies.
+      - name: Upload release files
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          HOST_IP: ${{ secrets.HOST_IP }}
+        run: |
+          ssh_opts=(-i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes -o BatchMode=yes)
+          dest="/opt/yon-site/releases/$GIT_SHA"
+          stage="$(mktemp -d)"
+          cp website/serve.ts website/Dockerfile website/compose.yaml website/deploy.sh "$stage/"
+          cp -R site "$stage/public"
+          tar -C "$stage" -czf - . | ssh "${ssh_opts[@]}" "$SSH_USER@$HOST_IP" \
+            "mkdir -p '$dest' && tar -xzf - --no-same-owner -C '$dest'"
+          rm -rf -- "$stage"
+
+      - name: Deploy, check, roll back on failure
+        env:
+          SSH_USER: ${{ secrets.SSH_USER }}
+          HOST_IP: ${{ secrets.HOST_IP }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -o StrictHostKeyChecking=yes -o BatchMode=yes \
+            "$SSH_USER@$HOST_IP" \
+            "GIT_SHA='$GIT_SHA' SITE_HOST='$SITE_HOST' bash '/opt/yon-site/releases/$GIT_SHA/deploy.sh'"
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_deploy

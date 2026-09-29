@@ -95,3 +95,15 @@ Carry the existing Yon Link protocol over a small relay:
   until the phone proves the new key, then the old one is removed. A pending
   pairing that never connects is dropped after 15 minutes.
 - Spec: `docs/superpowers/specs/2026-09-28-anywhere-default-relay-design.md`.
+
+## Amendment (2026-09-29): the page moves to yon.meo.in.th
+
+The phone page is now served from https://yon.meo.in.th/phonelink/ by our own
+static server (`website/`, Docker behind Cloudflare Tunnel, deployed by
+`.github/workflows/website.yml` from release tags with a required reviewer).
+Reason: `vactuzx-dot.github.io` is one origin for every GitHub Pages project of
+the account, and the page caches the pairing key in localStorage. The new
+origin also carries a strict CSP as HTTP headers (Pages can't set headers).
+The project page at `/` shares the origin, so it must never load third-party
+code. `vactuzx-dot.github.io/Yon/` keeps serving a hand-off that moves old
+pairings to the new address and deletes the key the old page cached.
