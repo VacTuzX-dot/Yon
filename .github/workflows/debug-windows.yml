@@ -1,7 +1,6 @@
-# TEMPORARY: the v0.2.3 release's Windows jobs hung before tauri build printed
-# anything (4/4), while the same step without tagName passed 4/4. This runs
-# the Windows builds with tagName v0.2.3 (uploads to the existing draft) and
-# then the release's own checksums/latest.json job. Delete after.
+# TEMPORARY: does the real (rendered) v0.2.3 releaseBody, passed to the
+# action as INPUT_RELEASEBODY, make `bun tauri build` hang on Windows?
+# No tagName: builds only. Delete after.
 name: Debug Windows tauri build
 on:
   push:
@@ -9,21 +8,13 @@ on:
 permissions:
   contents: read
 jobs:
-  build:
-    permissions:
-      contents: write
+  probe:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - target: ''
-            args: --bundles nsis
-          - target: aarch64-pc-windows-msvc
-            args: --target aarch64-pc-windows-msvc --bundles nsis
+        body: [real, ascii]
     runs-on: windows-latest
-    timeout-minutes: 40
-    outputs:
-      release_id: ${{ steps.tauri.outputs.releaseId }}
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,79 +26,35 @@ jobs:
       - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
         with:
           toolchain: stable
-          targets: ${{ matrix.target }}
       - run: bun install --frozen-lockfile
-      - id: tauri
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
-        timeout-minutes: 30
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          YON_DEFAULT_RELAY: ${{ vars.YON_DEFAULT_RELAY }}
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        if: matrix.body == 'real'
+        timeout-minutes: 15
         with:
           tauriScript: bun tauri
-          args: ${{ matrix.args }}
-          tagName: v0.2.3
-          releaseName: Yon v0.2.3
-          releaseDraft: true
-          prerelease: false
-          uploadUpdaterJson: false
+          args: --no-bundle
+          releaseBody: |
+            ## Download
 
-  # latest.json (updater manifest) and SHA256SUMS.txt, computed once from the
-  # exact files attached to the release, after every build has finished.
-  checksums:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      REPO: ${{ github.repository }}
-      RELEASE_ID: ${{ needs.build.outputs.release_id }}
-    steps:
-      - name: Download assets, write latest.json, hash, upload
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir assets && cd assets
-          gh api "repos/$REPO/releases/$RELEASE_ID/assets" --paginate \
-            -q '.[] | select(.name != "SHA256SUMS.txt" and .name != "latest.json") | "\(.id) \(.name)"' |
-          while read -r id name; do
-            gh api -H "Accept: application/octet-stream" "repos/$REPO/releases/assets/$id" > "$name"
-          done
+            | Your computer | File |
+            |---|---|
+            | **Mac with Apple Silicon** (M1, M2, M3, M4 or newer) | [Yon_0.2.3_aarch64.dmg](https://github.com/VacTuzX-dot/Yon/releases/download/v0.2.3/Yon_0.2.3_aarch64.dmg) |
+            | **Mac with an Intel processor** | [Yon_0.2.3_x64.dmg](https://github.com/VacTuzX-dot/Yon/releases/download/v0.2.3/Yon_0.2.3_x64.dmg) |
+            | **Windows 10 / 11, 64-bit** (x64, Intel or AMD) | [Yon_0.2.3_x64-setup.exe](https://github.com/VacTuzX-dot/Yon/releases/download/v0.2.3/Yon_0.2.3_x64-setup.exe) |
+            | **Windows 11 on ARM** (Snapdragon, e.g. Copilot+ PCs) | [Yon_0.2.3_arm64-setup.exe](https://github.com/VacTuzX-dot/Yon/releases/download/v0.2.3/Yon_0.2.3_arm64-setup.exe) |
 
-          # One updater entry per platform, keyed the way tauri-plugin-updater
-          # looks them up ("<os>-<arch>-<installer>", then "<os>-<arch>").
-          platforms='{}'
-          for sig in *.sig; do
-            case "$sig" in
-              *_aarch64.app.tar.gz.sig | *_arm64.app.tar.gz.sig) keys="darwin-aarch64 darwin-aarch64-app" ;;
-              *_x64.app.tar.gz.sig | *_x86_64.app.tar.gz.sig) keys="darwin-x86_64 darwin-x86_64-app" ;;
-              *_x64-setup.exe.sig | *_x86_64-setup.exe.sig) keys="windows-x86_64 windows-x86_64-nsis" ;;
-              *_arm64-setup.exe.sig | *_aarch64-setup.exe.sig) keys="windows-aarch64 windows-aarch64-nsis" ;;
-              *) echo "::error::no updater platform for $sig"; exit 1 ;;
-            esac
-            url="https://github.com/$REPO/releases/download/v0.2.3/${sig%.sig}"
-            for key in $keys; do
-              platforms=$(jq --arg k "$key" --arg s "$(cat "$sig")" --arg u "$url" \
-                '.[$k] = {signature: $s, url: $u}' <<<"$platforms")
-            done
-          done
-          for need in darwin-aarch64 darwin-x86_64 windows-x86_64 windows-aarch64; do
-            jq -e --arg k "$need" 'has($k)' <<<"$platforms" > /dev/null \
-              || { echo "::error::latest.json is missing $need"; exit 1; }
-          done
-          jq -n --arg v "0.2.3" --arg d "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg n "https://github.com/$REPO/releases/tag/v0.2.3" \
-            --argjson p "$platforms" '{version: $v, notes: $n, pub_date: $d, platforms: $p}' > latest.json
-          cat latest.json
-          gh api --method POST -H "Content-Type: application/json" \
-            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=latest.json" \
-            --input latest.json > /dev/null
+            Not sure which one?
+            - **Mac:** Apple menu → About This Mac. "Chip: Apple M…" means Apple Silicon; "Processor: … Intel …" means Intel.
+            - **Windows:** Settings → System → About → System type. "x64-based processor" → x64; "ARM-based processor" → ARM. 32-bit Windows (x86) isn't supported.
 
-          sha256sum -- * > ../SHA256SUMS.txt
-          cat ../SHA256SUMS.txt
-          gh api --method POST -H "Content-Type: text/plain" \
-            "https://uploads.github.com/repos/$REPO/releases/$RELEASE_ID/assets?name=SHA256SUMS.txt" \
-            --input ../SHA256SUMS.txt > /dev/null
+            **Mac without the "Open Anyway" step:** `curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash`
+
+            Unsigned build: see the [README](https://github.com/VacTuzX-dot/Yon#install) for the first-open steps. Changes and known problems: [CHANGELOG](https://github.com/VacTuzX-dot/Yon/blob/main/CHANGELOG.md).
+
+      - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0
+        if: matrix.body == 'ascii'
+        timeout-minutes: 15
+        with:
+          tauriScript: bun tauri
+          args: --no-bundle
+          releaseBody: plain ascii body
