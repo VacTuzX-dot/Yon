@@ -139,3 +139,13 @@ jobs:
         run: |
           ! LC_ALL=C grep -n '[^[:print:][:space:]]' install.sh
           bash -n install.sh
+
+      # install.ps1 is read as ANSI by Windows PowerShell 5.1 when it has no
+      # BOM, so it stays ASCII. pwsh is preinstalled on the runner.
+      - name: install.ps1 is ASCII and parses
+        shell: pwsh
+        run: |
+          if (Select-String -Path install.ps1 -Pattern '[^\x09\x0A\x0D\x20-\x7E]') { throw "install.ps1 has non-ASCII characters" }
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$errors)
+          if ($errors) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }

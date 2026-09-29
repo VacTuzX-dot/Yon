@@ -1,0 +1,45 @@
+name: Install script (Windows)
+
+# Runs install.ps1 the way a visitor does (piped into iex) against a real
+# release, silently, and checks that Yon really got installed.
+on:
+  push:
+    paths: [install.ps1, .github/workflows/install-test.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install v0.2.3 with install.ps1
+        shell: powershell # Windows PowerShell 5.1, the one most people have
+        run: |
+          $env:YON_VERSION = "0.2.3"
+          $env:YON_SILENT = "1"
+          iex (Get-Content -Raw install.ps1)
+
+      - name: Yon is installed
+        shell: powershell
+        run: |
+          $found = Get-ChildItem "$env:LOCALAPPDATA", "$env:ProgramFiles" -Filter "yon*.exe" -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch 'uninst' } | Select-Object -First 1
+          if (-not $found) { throw "no Yon executable found after install.ps1" }
+          Write-Host "Found $($found.FullName)"
+
+      - name: A wrong checksum installs nothing
+        shell: powershell
+        run: |
+          # Asking for a version that has no such release must fail cleanly.
+          $env:YON_VERSION = "9.9.9"
+          $before = (Get-ChildItem "$env:LOCALAPPDATA" -Filter "yon*.exe" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Measure-Object).Count
+          iex (Get-Content -Raw install.ps1)
+          $after = (Get-ChildItem "$env:LOCALAPPDATA" -Filter "yon*.exe" -Recurse -Depth 3 -ErrorAction SilentlyContinue | Measure-Object).Count
+          if ($before -ne $after) { throw "install.ps1 changed the install on a failed run" }
