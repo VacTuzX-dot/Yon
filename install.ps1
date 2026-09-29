@@ -1,6 +1,8 @@
 # Install Yon on Windows (x64 or ARM64) from GitHub Releases.
 #
-#   irm https://yon.meo.in.th/pwsh | iex
+#   Invoke-WebRequest https://yon.meo.in.th/pwsh -OutFile "$env:TEMP\yon-install.ps1"
+#   notepad "$env:TEMP\yon-install.ps1"        (read it first)
+#   powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\yon-install.ps1"
 #
 # Options (environment variables, set before running):
 #   $env:YON_VERSION = "0.2.3"   install this version instead of the latest

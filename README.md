@@ -48,13 +48,20 @@ The [script](install.sh) (the website serves that same file at `/mac`; you can a
 
 **macOS, from the DMG:** open the `.dmg`, drag Yon to Applications and open it. macOS says it "could not verify" Yon: open System Settings → Privacy & Security and click **Open Anyway**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
 
-**Windows, from PowerShell:**
+**Windows, from PowerShell (advanced):** the installer above is the main way. If you'd rather use a script, download it, read it, then run it. The website doesn't offer this as a one-line command: pasting a remote script straight into PowerShell is how scams work, and ad blockers such as uBlock Origin warn about it.
 
 ```powershell
-irm https://yon.meo.in.th/pwsh | iex
+Invoke-WebRequest https://yon.meo.in.th/pwsh -OutFile "$env:TEMP\yon-install.ps1"
+notepad "$env:TEMP\yon-install.ps1"
 ```
 
-The [script](install.ps1) (the website serves that same file at `/pwsh`; you can also run it from `https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.ps1`) downloads the installer for your PC (x64 or ARM64), checks it against the release's `SHA256SUMS.txt` and runs it (per user, no admin). Set `$env:YON_VERSION = "0.2.3"` first for a specific version, or `$env:YON_SILENT = "1"` to skip the installer's window. It trusts GitHub as much as the installer download does; read it first if you like.
+The [script](install.ps1) (the website serves that same file at `/pwsh`) downloads the installer for your PC (x64 or ARM64) from this repository's GitHub release, checks its SHA-256 against the release's `SHA256SUMS.txt` (it catches a broken or swapped download, not a compromised release), and runs it, per user, no admin. The installer itself isn't code-signed yet, and the script doesn't check a signature. Windows PCs block script files by default, and you decide how to run this one. For a single run that changes nothing else:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File "$env:TEMP\yon-install.ps1"
+```
+
+Set `$env:YON_VERSION = "0.2.3"` first for a specific version, or `$env:YON_SILENT = "1"` to skip the installer's window.
 
 **Windows, from the installer:** run the installer. If SmartScreen says "Windows protected your PC", click **More info** → **Run anyway**. When Windows Firewall asks, allow Yon on **Private networks**.
 
