@@ -34,7 +34,7 @@ jobs:
           if (-not $found) { throw "no Yon executable found after install.ps1" }
           Write-Host "Found $($found.FullName)"
 
-      - name: A wrong checksum installs nothing
+      - name: A missing release installs nothing
         shell: powershell
         run: |
           # Asking for a version that has no such release must fail cleanly.
