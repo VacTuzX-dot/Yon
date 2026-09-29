@@ -54,3 +54,17 @@ test("search matches name or OS, ignoring case", () => {
   expect(matches(d, "Desk", "WIN")).toBe(true);
   expect(matches(d, "Desk", "mac")).toBe(false);
 });
+
+test("two phones with the same name are told apart by their code", () => {
+  const l = labels([
+    dev("phone:a1b2c3d4e5f60718a1b2c3d4e5f60718", "Phone", "phone"),
+    dev("phone:0f0e0d0c0b0a09080706050403020100", "Phone", "phone"),
+  ]);
+  expect(Object.values(l)).toEqual(["Phone · A1B2", "Phone · 0F0E"]);
+});
+
+test("search finds a same-named device by the code in its label", () => {
+  const d = dev("x", "Desk", "windows", { short_fingerprint: "4F2A-0000-0000-0000" });
+  expect(matches(d, "Desk · 4F2A", "4f2a")).toBe(true);
+  expect(matches(d, "Desk", "4f2a")).toBe(false);
+});

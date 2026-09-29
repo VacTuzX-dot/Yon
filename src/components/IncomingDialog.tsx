@@ -75,7 +75,9 @@ export default function IncomingDialog({ request, onAnswer }: Props) {
         </span>
       </label>
       <div className="actions">
-        <button type="button" className="quiet" onClick={() => onAnswer(false, false)}>
+        {/* WHY: focus starts here, not on "Always accept" (the first focusable
+            element), so a stray Space can't trust a device, and Enter declines. */}
+        <button type="button" className="quiet" autoFocus onClick={() => onAnswer(false, false)}>
           Decline
         </button>
         <button type="button" className="primary" onClick={() => onAnswer(true, trust)}>

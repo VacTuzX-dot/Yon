@@ -11,6 +11,7 @@
   --accent-ink: #1e222b;
   --ok: #2f9e6e;
   --bad: #d64545;
+  --bad-ink: #fff;
   --avatar: #e9ecf1;
   --radius-sheet: 18px;
   --radius-control: 10px;
@@ -32,6 +33,8 @@
     --accent-ink: #181b21;
     --ok: #5cc596;
     --bad: #f07878;
+    /* WHY: white on the lighter dark-mode red is ~2.6:1; dark ink reads. */
+    --bad-ink: #181b21;
     --avatar: #2b3039;
   }
 }
@@ -514,7 +517,7 @@ button.avatar:disabled:has(.ring) {
   padding: 8px 16px;
   font-weight: 600;
   background: var(--bad);
-  color: #fff;
+  color: var(--bad-ink);
 }
 
 .danger:hover {

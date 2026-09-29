@@ -80,6 +80,9 @@ export default function PairPhoneSheet({ online, phones, replace, onPaired, onCl
       aria-labelledby="pair-title"
       onCancel={(e) => {
         e.preventDefault();
+        // WHY: opened from Settings, this dialog sits inside Settings' <dialog>
+        // and React passes `cancel` up to it too — Esc would close both.
+        e.stopPropagation();
         void close();
       }}
     >
