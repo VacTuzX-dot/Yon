@@ -259,10 +259,15 @@ button.avatar:disabled:has(.ring) {
 
 /* ---------- drag and drop: the device under the files ---------- */
 
-/* The device under the files: accent ring, lifted and grown. */
+/* The device under the files: one accent ring, accent icon, lifted.
+   WHY: no solid fill — a filled accent disc plus an outline read as a
+   glowing blob and hid the icon. box-shadow follows the circle in WebKit. */
 .orbit.dragging .device.drop-target button.avatar:not(:disabled) {
-  outline: 2px solid var(--accent);
-  outline-offset: 5px;
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow:
+    0 0 0 3px var(--accent),
+    0 12px 30px -12px color-mix(in oklab, var(--accent) 60%, transparent);
   transform: translateY(-3px) scale(1.06);
 }
 
@@ -272,8 +277,7 @@ button.avatar:disabled:has(.ring) {
 }
 
 .device.drop-target .avatar {
-  background: var(--accent);
-  color: var(--accent-ink);
+  color: var(--accent);
   transform: scale(1.06);
 }
 

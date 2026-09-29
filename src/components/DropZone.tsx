@@ -4,13 +4,15 @@ import { plural } from "../files";
 interface Props {
   /** Files and folders are over the window. */
   dragging: { files: number; folders: number } | null;
+  /** Name of the device under the pointer, if any. */
+  target: string | null;
   children: ReactNode;
 }
 
 /** The device area turns into a drop target while files are dragged over
  *  the window: tinted, dashed accent edge, a slight lift, and a label with
  *  the count. The device under the pointer is highlighted by DeviceOrbit. */
-export default function DropZone({ dragging, children }: Props) {
+export default function DropZone({ dragging, target, children }: Props) {
   const on = dragging !== null;
   const what = dragging
     ? [
@@ -20,7 +22,13 @@ export default function DropZone({ dragging, children }: Props) {
         .filter(Boolean)
         .join(" and ")
     : "";
-  const label = dragging === null ? "" : `Drop ${what || "here"} on a device`;
+  // WHY: over a device, say exactly where the files will go.
+  const label =
+    dragging === null
+      ? ""
+      : target
+        ? `Drop to send to ${target}`
+        : `Drop ${what || "here"} on a device`;
 
   return (
     <div
@@ -28,7 +36,7 @@ export default function DropZone({ dragging, children }: Props) {
         "relative flex w-full max-w-[760px] flex-col items-center rounded-[28px] border-2 border-dashed px-4 py-5",
         "transition-[background-color,border-color,transform] duration-200 ease-snappy",
         on
-          ? "border-accent bg-accent/10 shadow-[0_0_56px_-16px_var(--accent)] motion-safe:scale-[1.01]"
+          ? "border-accent/70 bg-accent/5"
           : "border-transparent",
       ].join(" ")}
     >

@@ -20,6 +20,7 @@ import {
 import ConfirmSheet from "./components/ConfirmSheet";
 import DeviceOrbit, { initials, type DeviceActivity } from "./components/DeviceOrbit";
 import DropZone from "./components/DropZone";
+import { labels } from "./devices";
 import IncomingDialog from "./components/IncomingDialog";
 import PairPhoneSheet from "./components/PairPhoneSheet";
 import { LogoShapes } from "./components/Logo";
@@ -315,7 +316,12 @@ export default function App() {
         <h1>
           {devices.length ? "Choose a device, or drop files on it" : "Looking for devices nearby"}
         </h1>
-        <DropZone dragging={dragging}>
+        <DropZone
+          dragging={dragging}
+          target={
+            dragging?.over ? labels(devices)[dragging.over] ?? null : null
+          }
+        >
           <DeviceOrbit
             devices={devices}
             activity={activity}
