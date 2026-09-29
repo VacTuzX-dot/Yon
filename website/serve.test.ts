@@ -21,6 +21,7 @@ beforeAll(() => {
   writeFileSync(join(dir, "icon.png"), new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
   writeFileSync(join(dir, "toss.wav"), new Uint8Array([0x52, 0x49, 0x46, 0x46]));
   writeFileSync(join(dir, "pwsh.ps1"), "Write-Host hi\n");
+  writeFileSync(join(dir, "mac.sh"), "echo hi\n");
   writeFileSync(join(dir, "toss.mp3"), new Uint8Array([0x49, 0x44, 0x33]));
   writeFileSync(join(dir, "logo.svg"), "<svg/>");
   writeFileSync(join(dir, "favicon.ico"), new Uint8Array([0, 0, 1, 0]));
@@ -232,12 +233,14 @@ test("Range: 206 with Content-Range, suffix ranges, 416 out of bounds, full body
   expect(junk.status).toBe(200); // multi-range: ignored, the whole file is valid
 });
 
-test("/pwsh serves the PowerShell installer as plain text, same as /pwsh.ps1", async () => {
-  const short = await fetch(`${base}/pwsh`);
-  const long = await fetch(`${base}/pwsh.ps1`);
-  expect(short.status).toBe(200);
-  expect(short.headers.get("content-type")).toBe("text/plain; charset=utf-8");
-  expect(short.headers.get("x-content-type-options")).toBe("nosniff");
-  expect(short.headers.get("content-security-policy")).toBe(CSP_SITE);
-  expect(await short.text()).toBe(await long.text());
+test("/pwsh and /mac serve the installers as plain text, same as their long paths", async () => {
+  for (const [a, b] of [["/pwsh", "/pwsh.ps1"], ["/mac", "/mac.sh"]]) {
+    const short = await fetch(`${base}${a}`);
+    const long = await fetch(`${base}${b}`);
+    expect(short.status).toBe(200);
+    expect(short.headers.get("content-type")).toBe("text/plain; charset=utf-8");
+    expect(short.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(short.headers.get("content-security-policy")).toBe(CSP_SITE);
+    expect(await short.text()).toBe(await long.text());
+  }
 });

@@ -41,10 +41,10 @@ The builds aren't notarized by Apple or signed for Windows, so your OS warns you
 **macOS, from Terminal (skips the warning):**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash
+curl -fsSL https://yon.meo.in.th/mac | bash
 ```
 
-The [script](install.sh) downloads the latest release, checks it against the release's `SHA256SUMS.txt` and the app's code signature, and puts Yon in `/Applications`, without `sudo`. Files fetched this way aren't marked as downloaded, so macOS opens Yon straight away. It trusts GitHub as much as the DMG does; read it first if you like. Run it again any time to reinstall.
+The [script](install.sh) (the website serves that same file at `/mac`; you can also run it from `https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh`) downloads the latest release, checks it against the release's `SHA256SUMS.txt` and the app's code signature, and puts Yon in `/Applications`, without `sudo`. Files fetched this way aren't marked as downloaded, so macOS opens Yon straight away. It trusts GitHub as much as the DMG does; read it first if you like. Run it again any time to reinstall.
 
 **macOS, from the DMG:** open the `.dmg`, drag Yon to Applications and open it. macOS says it "could not verify" Yon: open System Settings → Privacy & Security and click **Open Anyway**. You only need to do this once. When asked, allow Yon to find devices on your local network. To get **Share → Yon**, turn Yon on in System Settings → General → Login Items & Extensions → Sharing (macOS keeps new share extensions off until you do). Unsigned builds may not offer the Share extension at all; Open With always works.
 

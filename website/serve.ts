@@ -18,7 +18,8 @@ const TYPES: Record<string, string> = {
   json: "application/json; charset=utf-8",
   txt: "text/plain; charset=utf-8",
   xml: "application/xml; charset=utf-8",
-  ps1: "text/plain; charset=utf-8", // shown, never run by the browser
+  ps1: "text/plain; charset=utf-8", // installers: shown, never run by the browser
+  sh: "text/plain; charset=utf-8",
   jpg: "image/jpeg",
   svg: "image/svg+xml; charset=utf-8",
   png: "image/png",
@@ -26,6 +27,9 @@ const TYPES: Record<string, string> = {
   wav: "audio/wav",
   mp3: "audio/mpeg",
 };
+
+// Short paths for the install scripts (build-link.ts writes both files).
+const SHORT: Record<string, string> = { "/pwsh.ps1": "/pwsh", "/mac.sh": "/mac" };
 
 export const CSP_PHONE =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
@@ -82,9 +86,11 @@ export function loadSite(dir: string): Site {
       const etag = `"${createHash("sha256").update(body).digest("base64url").slice(0, 27)}"`;
       const entry = { body, type, etag };
       files.set(url + name, entry);
-      // The PowerShell installer is also served at /pwsh, short enough to type:
-      // irm https://yon.meo.in.th/pwsh | iex
-      if (url + name === "/pwsh.ps1") files.set("/pwsh", entry);
+      // The installers are also served without an extension, short enough to type:
+      //   curl -fsSL https://yon.meo.in.th/mac | bash
+      //   irm https://yon.meo.in.th/pwsh | iex
+      const alias = SHORT[url + name];
+      if (alias) files.set(alias, entry);
       if (name === "index.html") {
         files.set(url, entry); // "/" and "/phonelink/"
         if (url !== "/") redirects.set(url.slice(0, -1), url); // "/phonelink" → "/phonelink/"

@@ -1,7 +1,7 @@
 #!/bin/bash
 # Install Yon on macOS (Apple Silicon or Intel) from GitHub Releases.
 #
-#   curl -fsSL https://raw.githubusercontent.com/VacTuzX-dot/Yon/main/install.sh | bash
+#   curl -fsSL https://yon.meo.in.th/mac | bash
 #
 # Options (environment variables):
 #   YON_VERSION=0.2.2        install this version instead of the latest

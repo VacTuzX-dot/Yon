@@ -61,8 +61,9 @@ await Bun.write(`${site}/index.html`, home);
 // Search engines: what to crawl, and the two pages worth listing. The phone
 // page is noindex (it is a tool, not a destination).
 await Bun.write(`${site}/og.jpg`, Bun.file("web/home/og.jpg"));
-// The PowerShell installer, served as /pwsh (website/serve.ts) and /pwsh.ps1.
+// The install scripts, served as /pwsh and /mac (website/serve.ts) and with their extensions.
 await Bun.write(`${site}/pwsh.ps1`, Bun.file("install.ps1"));
+await Bun.write(`${site}/mac.sh`, Bun.file("install.sh"));
 await Bun.write(`${site}/robots.txt`, `User-agent: *\nAllow: /\n\nSitemap: ${SITE}/sitemap.xml\n`);
 const day = new Date().toISOString().slice(0, 10);
 await Bun.write(
