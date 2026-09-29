@@ -10,6 +10,11 @@ Known problems are in red boxes, with the version that fixes them and what to do
 - **Intel Macs** and **Windows on ARM** (Snapdragon PCs) get their own downloads. The Mac install script picks the right one.
 - Every CI run checks Rust and JavaScript dependencies for known vulnerabilities (`cargo audit`, `bun audit`) and that Yon still builds for Intel Macs and Windows on ARM.
 
+### Fixed
+
+- Settings → Phones: "What the relay can see" was squeezed to one word per line, with **Pair a phone** drawn on top of it (since 0.2.2).
+- The Mac install script stopped with `name…: unbound variable` in Terminal windows using a UTF-8 language setting (macOS's built-in bash). Nothing was installed.
+
 ## 0.2.2 — 2026-09-28
 
 ### New
