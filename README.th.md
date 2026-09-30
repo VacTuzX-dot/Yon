@@ -21,7 +21,7 @@ Yon (โยน) ส่งไฟล์และโฟลเดอร์ระห�
 
 [![Yon ใน 72 วินาที: กดเพื่อดูวิดีโอ](docs/yon-film.jpg)](https://yon.meo.in.th/film/)
 
-<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ ดู "Yon in 72 seconds"</b></a><br>วิดีโอ WebGL พร้อมเพลงที่สร้างจากโค้ด ทำจากโค้ดใน repo นี้</p>
+<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ ดู "Yon in 90 seconds"</b></a><br>วิดีโอ WebGL พร้อมเพลงที่สร้างจากโค้ด ทำจากโค้ดใน repo นี้</p>
 
 ## อัปเดต
 

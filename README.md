@@ -19,9 +19,9 @@
 
 Yon (โยน, Thai for "to toss") sends files and folders between your Macs, Windows PCs and phones. No account, no cloud. Files go straight from one device to the other, encrypted. Free and open source (MIT).
 
-[![Yon in 72 seconds: click to watch the film](docs/yon-film.jpg)](https://yon.meo.in.th/film/)
+[![Yon in 90 seconds: click to watch the film](docs/yon-film.jpg)](https://yon.meo.in.th/film/)
 
-<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ Watch "Yon in 72 seconds"</b></a><br>A WebGL film with an algorithmic soundtrack, made from code in this repo.</p>
+<p align="center"><a href="https://yon.meo.in.th/film/"><b>▶ Watch "Yon in 90 seconds"</b></a><br>A WebGL film with an algorithmic soundtrack, made from code in this repo.</p>
 
 ## Updates
 
