@@ -145,6 +145,20 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
               </span>
             </label>
           )}
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={state.settings.launch_at_login}
+              onChange={(e) => run(() => api.setLaunchAtLogin(e.target.checked))}
+            />
+            <span>
+              Open Yon when I log in
+              <span className="hint">
+                Starts hidden in the {isMac ? "menu bar" : "tray"}, so nearby devices can send you files
+                after a restart.
+              </span>
+            </span>
+          </label>
           <p className="hint">
             Device code <span className="code">{state.me.short_fingerprint}</span>. People sending to
             you can check it matches.

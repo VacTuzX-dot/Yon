@@ -4,6 +4,7 @@
 //! folders are picked here in Rust; the UI only gets opaque ids plus names
 //! and sizes to display.
 
+use crate::autostart;
 use crate::client::{self, OutFile, SendOutcome, SendStatus, Target};
 use crate::discovery::{Device, Discovery};
 use crate::identity::{short_fingerprint, Identity};
@@ -98,6 +99,7 @@ pub struct SettingsDto {
     port: u16,
     close_to_tray: bool,
     show_in_dock: bool,
+    launch_at_login: bool,
     check_updates: bool,
     trusted: Vec<settings::TrustedDevice>,
     /// Never includes the pairing keys.
@@ -458,6 +460,20 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
         Ok(None) => {}
         Err(e) => eprintln!("[yon] couldn't save pairing change: {e}"),
     }
+    // WHY: the OS entry is the truth (the person can remove it there). Also
+    // points it at this copy of Yon again after an update or a move.
+    let login_on = autostart::is_enabled();
+    if login_on {
+        if let Err(e) = autostart::set(true) {
+            eprintln!("[yon] couldn't refresh the login entry: {e}");
+        }
+    }
+    if login_on != settings.launch_at_login {
+        settings.launch_at_login = login_on;
+        if let Err(e) = settings.save(&data_dir) {
+            eprintln!("[yon] couldn't save settings: {e}");
+        }
+    }
     let has_pending = settings.has_pending();
     let identity = Arc::new(
         Identity::load_or_create(&data_dir).map_err(|e| format!("cannot load identity: {e}"))?,
@@ -767,6 +783,7 @@ impl AppState {
             port: s.port,
             close_to_tray: s.close_to_tray,
             show_in_dock: s.show_in_dock,
+            launch_at_login: s.launch_at_login,
             check_updates: s.check_updates,
             trusted: s.trusted.clone(),
             phones: s
@@ -1160,6 +1177,22 @@ pub fn set_close_to_tray(state: State<'_, AppState>, enabled: bool) -> Result<Se
     {
         let mut s = state.settings.lock().expect("lock");
         s.close_to_tray = enabled;
+        s.save(&state.data_dir)
+            .map_err(|e| format!("Could not save settings: {e}"))?;
+    }
+    Ok(state.settings_dto())
+}
+
+#[tauri::command]
+pub fn set_launch_at_login(
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<SettingsDto, String> {
+    // WHY: the OS first; the setting only records what really happened.
+    autostart::set(enabled).map_err(|e| format!("Could not change the login setting: {e}"))?;
+    {
+        let mut s = state.settings.lock().expect("lock");
+        s.launch_at_login = enabled;
         s.save(&state.data_dir)
             .map_err(|e| format!("Could not save settings: {e}"))?;
     }

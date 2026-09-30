@@ -12,6 +12,11 @@ How Yon protects your files, and where it doesn't. Threat models and decisions: 
 - Yon only accepts connections from private network addresses.
 - While Yon is running (including in the menu bar or tray) it listens on your local network for requests. Quit it when you don't want to receive anything.
 
+## On your computer
+
+- **Open Yon when I log in** is off until you turn it on in Settings. It adds one entry in your own profile (a LaunchAgent on macOS, a `Run` value on Windows), needs no admin rights, and starts Yon hidden. Turning the setting off removes the entry; uninstalling on Windows does too. On macOS, deleting the app leaves the small file `~/Library/LaunchAgents/io.github.vactuzx-dot.yon.login.plist`, which then does nothing.
+- **Activity** keeps the last 50 transfers across restarts in the app's storage on this computer: which device, what happened (for example "Received 3 files") and when. File names and paths are never saved, and a failure's reason is dropped because an error can name a file. **Clear** removes it.
+
 ## Updates
 
 Updates are signed. Yon installs an update only if its signature matches the public key built into the app, so a changed download is refused. The update check is the only request Yon makes outside your local network: it asks GitHub for the latest version and sends nothing about you or your files.

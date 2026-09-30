@@ -2,6 +2,17 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
+## Unreleased (0.2.4)
+
+### New
+
+- **Open Yon when I log in** (Settings → This computer), on macOS and Windows. Off until you turn it on. Yon then starts hidden in the menu bar or tray after a restart, so nearby devices can still send you files. Turning it off, or uninstalling on Windows, removes the entry again.
+- **Activity is kept across restarts** (until you click Clear). It stores who, what happened and when, never a file name; the reason after "Couldn't send" is left out because an error can name a file. Older entries show their day.
+
+### Changed
+
+- Dependabot also watches the Docker images of the relay and the website (it already covered GitHub Actions, Rust and JavaScript).
+
 ## 0.2.3 — 2026-09-29
 
 ### New

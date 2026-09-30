@@ -9,7 +9,7 @@ interface Props {
   onClose: () => void;
 }
 
-/** What was sent and received since Yon started, newest first. */
+/** What was sent and received, newest first. */
 export default function ActivitySheet({ entries, onReveal, onClear, onClose }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => ref.current?.showModal(), []);
@@ -55,7 +55,7 @@ export default function ActivitySheet({ entries, onReveal, onClear, onClose }: P
           ))}
         </ul>
       )}
-      <p className="hint">Kept until Yon quits. File names aren't saved anywhere.</p>
+      <p className="hint">Kept on this computer until you clear it. File names aren't saved.</p>
       <div className="actions">
         {entries.length > 0 && (
           <button type="button" className="quiet" onClick={onClear}>

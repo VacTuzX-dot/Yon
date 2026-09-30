@@ -22,6 +22,7 @@ export interface Settings {
   port: number;
   close_to_tray: boolean;
   show_in_dock: boolean;
+  launch_at_login: boolean;
   check_updates: boolean;
   trusted: { id: string; name: string }[];
   phones: Phone[];
@@ -173,6 +174,7 @@ export const api = {
   pickSaveDir: () => invoke<Settings>("pick_save_dir"),
   setCloseToTray: (enabled: boolean) => invoke<Settings>("set_close_to_tray", { enabled }),
   setShowInDock: (enabled: boolean) => invoke<Settings>("set_show_in_dock", { enabled }),
+  setLaunchAtLogin: (enabled: boolean) => invoke<Settings>("set_launch_at_login", { enabled }),
   pairPhone: (name: string, replaces?: string) =>
     invoke<Pairing>("pair_phone", { name, replaces: replaces ?? null }),
   cancelPairing: (id: string) => invoke<CancelResult>("cancel_pairing", { id }),

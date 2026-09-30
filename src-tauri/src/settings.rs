@@ -21,6 +21,10 @@ pub struct Settings {
     /// macOS only: false = menu-bar-only app (no Dock icon).
     #[serde(default = "default_true")]
     pub show_in_dock: bool,
+    /// Open Yon (hidden, menu bar / tray) when the person logs in. Mirrors the
+    /// OS entry in `autostart`; off unless turned on in Settings.
+    #[serde(default)]
+    pub launch_at_login: bool,
     /// Devices whose transfers are accepted without asking. Matched by the
     /// key fingerprint proven in the TLS handshake — never by name.
     #[serde(default)]
@@ -88,6 +92,7 @@ impl Settings {
             port: crate::server::DEFAULT_PORT,
             close_to_tray: true,
             show_in_dock: true,
+            launch_at_login: false,
             trusted: Vec::new(),
             phones: Vec::new(),
             check_updates: true,
@@ -439,6 +444,7 @@ mod tests {
             port: 60000,
             close_to_tray: false,
             show_in_dock: false,
+            launch_at_login: true,
             check_updates: false,
             remote: true,
             relay_url: "wss://relay.example.com".into(),

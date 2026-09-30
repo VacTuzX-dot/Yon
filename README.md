@@ -25,6 +25,7 @@ Yon (โยน, Thai for "to toss") sends files and folders between your Macs, W
 
 ## Updates
 
+- **Coming in 0.2.4:** open Yon at login (macOS and Windows), and Activity that survives a restart. See the [changelog](CHANGELOG.md).
 - **2026-09-29:** Yon 0.2.3. Send folders, Intel Macs, Windows on ARM, an Activity list, smaller notifications and security fixes. [Changelog](CHANGELOG.md)
 - **2026-09-29:** [yon.meo.in.th](https://yon.meo.in.th/) is live, with a download button and the film.
 
@@ -37,7 +38,7 @@ Yon (โยน, Thai for "to toss") sends files and folders between your Macs, W
 - **Nothing gets overwritten.** Files go to `Downloads/Yon` (you can change this). A name that already exists becomes `photo (1).jpg`.
 - **Send from your file manager.** Windows: right-click → **Send to → Yon**. macOS: **Share → Yon**, **Open With → Yon**, or drop files on Yon's Dock icon.
 - **Phones, no app.** Send between phones and computers with [Yon Link](docs/yon-link.md).
-- **Stays in the background.** macOS: closing the window (⌘W) keeps Yon in the menu bar, and you can hide the Dock icon in Settings. Windows: closing sends it to the tray (turn this off in Settings). Quit from the menu bar or tray icon, or ⌘Q on macOS.
+- **Stays in the background.** macOS: closing the window (⌘W) keeps Yon in the menu bar, and you can hide the Dock icon in Settings. Windows: closing sends it to the tray (turn this off in Settings). From 0.2.4, turn on **Open Yon when I log in** in Settings to start it hidden after a restart. Quit from the menu bar or tray icon, or ⌘Q on macOS.
 
 ## Install
 

@@ -1,4 +1,5 @@
 mod app;
+mod autostart;
 pub mod client;
 pub mod discovery;
 pub mod identity;
@@ -45,7 +46,10 @@ pub fn run() {
     // arguments to the running instance instead of starting another one.
     #[cfg(desktop)]
     let builder = builder.plugin(tauri_plugin_single_instance::init(|app, args, cwd| {
-        app::show_main(app);
+        // A login launch finding Yon already running must not pop its window up.
+        if !args.iter().any(|a| a == autostart::FLAG) {
+            app::show_main(app);
+        }
         app::open_paths(app, app::paths_from_args(&args, std::path::Path::new(&cwd)));
     }));
     let app = builder
@@ -60,8 +64,14 @@ pub fn run() {
             if !show_in_dock {
                 app::apply_dock_visibility(app.handle(), false);
             }
-            // First launch from "Send to": files arrive as arguments.
             let args: Vec<String> = std::env::args().collect();
+            // Started at login: stay in the menu bar / tray, no window.
+            if args.iter().any(|a| a == autostart::FLAG) {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.hide();
+                }
+            }
+            // First launch from "Send to": files arrive as arguments.
             if let Ok(cwd) = std::env::current_dir() {
                 app::open_paths(app.handle(), app::paths_from_args(&args, &cwd));
             }
@@ -130,6 +140,7 @@ pub fn run() {
             app::forget_received,
             app::take_shared,
             app::set_show_in_dock,
+            app::set_launch_at_login,
             app::pair_phone,
             app::unpair_phone,
             app::cancel_pairing,

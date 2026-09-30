@@ -29,7 +29,7 @@ import SettingsSheet from "./components/SettingsSheet";
 import SharePicker from "./components/SharePicker";
 import AskSheet from "./components/AskSheet";
 import ActivitySheet from "./components/ActivitySheet";
-import { addEntry, type ActivityEntry } from "./activity";
+import { addEntry, loadActivity, saveActivity, type ActivityEntry } from "./activity";
 import { plural } from "./files";
 import type { MenuItem } from "./components/DeviceMenu";
 import UpdateBar from "./components/UpdateBar";
@@ -89,8 +89,9 @@ export default function App() {
   const [receiving, setReceiving] = useState<Receiving[]>([]);
   const [update, setUpdate] = useState<Update | null>(null);
   const timers = useRef(new Set<number>());
-  /** Finished transfers this session (the Activity sheet). */
-  const [history, setHistory] = useState<ActivityEntry[]>([]);
+  /** Finished transfers (the Activity sheet); kept across restarts until cleared. */
+  const [history, setHistory] = useState<ActivityEntry[]>(loadActivity);
+  useEffect(() => saveActivity(history), [history]);
   const [activityOpen, setActivityOpen] = useState(false);
   const activityOpenRef = useRef(false);
   const [unseen, setUnseen] = useState(0);
