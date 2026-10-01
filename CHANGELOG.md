@@ -12,6 +12,7 @@ Known problems are in red boxes, with the version that fixes them and what to do
 ### Changed
 
 - **A new film, "Yon in 90 seconds"** (yon.meo.in.th/film), replacing the 72-second particle one. A blocky voxel world drawn live with WebGL through a pixel-art shader: someone needs to get a 4 GB video onto the PC across the room, a friend texts "ลอง Yon สิ", and the camera dives into the phone and flies over floating islands that show how Yon works (finding nearby devices, the TLS handshake, sealed chunks checked on arrival, whole folders, pairing a phone, the relay), then back to the room to accept the file. The soundtrack is still algorithmic, from `scripts/film_music.py` (Python standard library, no samples).
+- **An editorial cut of the film** (yon.meo.in.th/reel), next to the voxel one: a 90-second motion reel in the style of a launch video, drawn live with the 2D canvas. One idea per scene, cut on the beat at 90 bpm: the problem, the nudge from a friend, nearby devices, platforms, mutual TLS 1.3, no cloud, SHA-256 checks, 0 accounts, any size, phones, and the MIT license. Its soundtrack, `scripts/reel_music.py`, gives every on-screen event its own sound effect (Python standard library, no samples). Both films share one player (`web/film/player.ts`); `FILM=web/reel bun run scripts/render-film.ts` renders the reel to MP4.
 - Dependabot also watches the Docker images of the relay and the website (it already covered GitHub Actions, Rust and JavaScript).
 
 ## 0.2.3 — 2026-09-29

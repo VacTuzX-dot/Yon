@@ -31,3 +31,4 @@ site-pages/
 # (scripts/film_music.py regenerates it; the web uses web/film/film.mp3).
 dist-film/
 web/film/film.wav
+web/reel/film.wav

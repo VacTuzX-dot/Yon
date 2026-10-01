@@ -4,6 +4,7 @@
 //   bun run scripts/render-film.ts                     # full film
 //   bun run scripts/render-film.ts --seconds 20..24    # quick check of a slice
 //   bun run scripts/render-film.ts --frames-only       # PNGs only, kept in dist-film/frames
+//   FILM=web/reel bun run scripts/render-film.ts       # the editorial reel -> dist-film/yon-reel.mp4
 //
 // Pipeline: Bun.build bundles the film script -> Bun.serve (127.0.0.1, random
 // port) serves the film page with a driver script -> headless Chromium calls
@@ -31,7 +32,9 @@ import { basename, dirname, extname, join, resolve, sep } from "node:path";
 import { randomBytes } from "node:crypto";
 
 const ROOT = resolve(import.meta.dir, "..");
-const FILM_DIR = join(ROOT, "web/film");
+// FILM=web/reel renders the editorial reel instead of the voxel film.
+const FILM_DIR = join(ROOT, process.env.FILM || "web/film");
+const NAME = FILM_DIR.endsWith("reel") ? "yon-reel" : "yon-film";
 const OUT_DIR = join(ROOT, "dist-film");
 const STALL_MS = 120_000; // no frame for this long = the page is stuck
 const POSTER_T = 64;
@@ -449,7 +452,7 @@ async function main() {
       cpSync(framesDir, dest, { recursive: true });
       console.log(`frames -> ${dest} (${readdirSync(dest).length} files)`);
     } else {
-      const mp4 = join(OUT_DIR, `yon-film${suffix}.mp4`);
+      const mp4 = join(OUT_DIR, `${NAME}${suffix}.mp4`);
       const encStart = performance.now();
       const cmd = [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
         "-framerate", String(fps), "-i", join(framesDir, "%05d.png")];
@@ -469,9 +472,9 @@ async function main() {
 
       // Poster: straight from the lossless PNG for t=64s when that frame was
       // rendered; a slice without it gets a poster of its own first frame.
-      const posterIdx = Math.round(POSTER_T * fps) - first;
+      const posterIdx = Math.round((NAME === "yon-reel" ? timeline.poster : POSTER_T) * fps) - first;
       const idx = posterIdx >= 0 && posterIdx < count ? posterIdx : 0;
-      const jpg = join(OUT_DIR, `yon-film${suffix}.jpg`);
+      const jpg = join(OUT_DIR, `${NAME}${suffix}.jpg`);
       await run(
         [ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
           "-i", join(framesDir, `${String(idx).padStart(5, "0")}.png`), "-q:v", "2", jpg],

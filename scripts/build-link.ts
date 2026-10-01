@@ -58,7 +58,7 @@ const home = (await Bun.file("web/home/index.html").text())
   .replaceAll("__VERSION__", version);
 if (home.includes("__")) throw new Error("home page has an unfilled placeholder");
 await Bun.write(`${site}/index.html`, home);
-// Search engines: what to crawl, and the two pages worth listing. The phone
+// Search engines: what to crawl, and the pages worth listing. The phone
 // page is noindex (it is a tool, not a destination).
 await Bun.write(`${site}/og.jpg`, Bun.file("web/home/og.jpg"));
 // The install scripts, served as /pwsh and /mac (website/serve.ts) and with their extensions.
@@ -69,15 +69,22 @@ const day = new Date().toISOString().slice(0, 10);
 await Bun.write(
   `${site}/sitemap.xml`,
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-    [`${SITE}/`, `${SITE}/film/`].map((u) => `  <url><loc>${u}</loc><lastmod>${day}</lastmod></url>\n`).join("") +
+    [`${SITE}/`, `${SITE}/film/`, `${SITE}/reel/`].map((u) => `  <url><loc>${u}</loc><lastmod>${day}</lastmod></url>\n`).join("") +
     `</urlset>\n`,
 );
-// The film (web/film/): plain WebGL + an algorithmic soundtrack.
-for (const f of ["index.html", "film.css", "film.mp3"]) await Bun.write(`${site}/film/${f}`, Bun.file(`web/film/${f}`));
-const film = await Bun.build({ entrypoints: ["web/film/film.ts"], outdir: `${site}/film`, naming: "film.js", target: "browser", minify: true });
-if (!film.success) {
-  for (const log of film.logs) console.error(log);
-  process.exit(1);
+// The films, each with an algorithmic soundtrack: the voxel film (web/film/,
+// plain WebGL) and the editorial reel (web/reel/, 2D canvas; it borrows
+// ../film/film.css).
+for (const dir of ["film", "reel"]) {
+  for (const f of ["index.html", "film.css", "film.mp3"]) {
+    const src = Bun.file(`web/${dir}/${f}`);
+    if (f !== "film.css" || (await src.exists())) await Bun.write(`${site}/${dir}/${f}`, src);
+  }
+  const film = await Bun.build({ entrypoints: [`web/${dir}/film.ts`], outdir: `${site}/${dir}`, naming: "film.js", target: "browser", minify: true });
+  if (!film.success) {
+    for (const log of film.logs) console.error(log);
+    process.exit(1);
+  }
 }
 // The hero animation: plain WebGL, no dependencies (web/home/toss.ts).
 const toss = await Bun.build({ entrypoints: ["web/home/toss.ts"], outdir: site, naming: "toss.js", target: "browser", minify: true });

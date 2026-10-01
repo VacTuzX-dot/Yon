@@ -142,10 +142,12 @@ svg {
   align-items: center;
   height: 44px;
   padding: 0 10px 0 12px;
-  border: 1px solid rgb(255 255 255 / 0.16);
+  border: 0;
   border-radius: 999px;
-  background: rgb(16 18 24 / 0.55);
-  backdrop-filter: blur(8px);
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
   color: var(--ink);
   font-size: 13px;
   font-weight: 600;
@@ -157,7 +159,6 @@ svg {
 .door:hover,
 .door:focus-visible {
   opacity: 1;
-  background: rgb(16 18 24 / 0.8);
 }
 
 .door:active {
@@ -217,25 +218,82 @@ svg {
   opacity: 0.9;
 }
 
-/* Controls bar */
+/* Controls: one floating capsule of dark glass, like QuickTime's HUD. It
+   blurs and saturates what is behind it (the film, light or dark), has a lit
+   rim and a soft shadow, and materializes (fade, rise, scale) instead of
+   just appearing. */
+:root {
+  --glass: linear-gradient(rgb(255 255 255 / 0.16), rgb(255 255 255 / 0.03)), rgb(22 24 30 / 0.5);
+  --glass-solid: rgb(24 26 32 / 0.92);
+  --glass-blur: blur(28px) saturate(190%);
+  --glass-shadow: inset 0 1px 0 rgb(255 255 255 / 0.28), inset 0 -1px 0 rgb(255 255 255 / 0.05), 0 18px 48px rgb(0 0 0 / 0.38), 0 2px 6px rgb(0 0 0 / 0.3);
+}
+
 .bar {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  left: 50%;
+  bottom: max(20px, env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 32px max(12px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  background: linear-gradient(transparent, rgb(0 0 0 / 0.6));
-  transition: opacity 0.35s;
+  gap: 2px;
+  width: min(760px, calc(100% - 24px));
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-shadow);
+  transform: translateX(-50%);
+  transform-origin: 50% 100%;
+  transition: opacity 0.35s var(--ease-out), transform 0.45s var(--ease-out);
+}
+
+/* The rim: light catching the glass edge, brightest at the top left. */
+.bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  padding: 1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgb(255 255 255 / 0.55), rgb(255 255 255 / 0.06) 35%, rgb(255 255 255 / 0.06) 65%, rgb(255 255 255 / 0.3));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  pointer-events: none;
 }
 
 .film.idle .bar,
 .film.gate .bar,
 .film.ended .bar {
   opacity: 0;
+  transform: translateX(-50%) translateY(10px) scale(0.97);
   pointer-events: none;
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .bar,
+  .door {
+    background: var(--glass-solid);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .bar,
+  .door {
+    background: var(--glass-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar,
+  .film.idle .bar,
+  .film.gate .bar,
+  .film.ended .bar {
+    transition: opacity 0.2s;
+    transform: translateX(-50%);
+  }
 }
 
 .ibtn {
@@ -250,15 +308,17 @@ svg {
   background: none;
   color: var(--ink);
   cursor: pointer;
-  transition: background 0.2s, transform 0.15s var(--ease-out);
+  transition: background 0.2s, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .ibtn:hover {
-  background: rgb(255 255 255 / 0.14);
+  background: rgb(255 255 255 / 0.16);
 }
 
+/* Down is instant, up springs back. */
 .ibtn:active {
   transform: scale(0.9);
+  transition: background 0.2s, transform 0.08s ease-out;
 }
 
 .film-play .i-play,
@@ -272,35 +332,190 @@ svg {
 }
 
 .film-sound .i-off,
+.film-sound .i-low,
 .film.muted .film-sound .i-on,
-.film.no-sound .film-sound .i-on {
+.film.no-sound .film-sound .i-on,
+.film.vol-low .film-sound .i-on {
   display: none;
 }
 
+.film.vol-low .film-sound .i-low,
 .film.muted .film-sound .i-off,
 .film.no-sound .film-sound .i-off {
   display: block;
 }
 
+.film.muted .film-sound .i-low,
+.film.no-sound .film-sound .i-low {
+  display: none;
+}
+
+/* Volume: the mute button plus a slider. On a mouse the slider opens while the
+   pointer or focus is on it; on a touch screen it is always open. Phones that
+   ignore volume (iOS) get no slider, only the button (player.ts adds .no-vol). */
+.vol {
+  flex: none;
+  display: flex;
+  align-items: center;
+}
+
+.film-vol {
+  --fill: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  width: 0;
+  height: 44px;
+  margin: 0;
+  padding: 0;
+  background: none;
+  opacity: 0;
+  cursor: pointer;
+  transition: width 0.25s var(--ease-out), opacity 0.2s, margin 0.25s var(--ease-out);
+}
+
+.vol:hover .film-vol,
+.vol:focus-within .film-vol,
+.film-vol:active {
+  width: 88px;
+  margin: 0 8px 0 2px;
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .film-vol {
+    width: 88px;
+    margin: 0 8px 0 2px;
+    opacity: 1;
+  }
+}
+
+.film.no-vol .film-vol {
+  display: none;
+}
+
+.film-vol::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgb(255 255 255 / 0.92) var(--fill), rgb(255 255 255 / 0.26) var(--fill));
+}
+
+.film-vol::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgb(255 255 255 / 0.92) var(--fill), rgb(255 255 255 / 0.26) var(--fill));
+}
+
+.film-vol::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+
+.film-vol::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.5);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .film-vol {
+    transition: none;
+  }
+}
+
+/* The scrubber: a thin track that thickens, and a thumb that appears, when
+   you point at it. The fill is the --fill the player sets. */
 .film-seek {
+  --fill: 0%;
   flex: 1;
   min-width: 0;
   height: 44px;
   margin: 0 6px;
+  appearance: none;
+  -webkit-appearance: none;
   background: none;
-  accent-color: var(--accent);
   cursor: pointer;
 }
 
-.film-time {
+.film-seek::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgb(255 255 255 / 0.92) var(--fill), rgb(255 255 255 / 0.26) var(--fill));
+  transition: height 0.2s var(--ease-out);
+}
+
+.film-seek::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(to right, rgb(255 255 255 / 0.92) var(--fill), rgb(255 255 255 / 0.26) var(--fill));
+}
+
+.film-seek:hover::-webkit-slider-runnable-track,
+.film-seek:active::-webkit-slider-runnable-track,
+.film-seek:focus-visible::-webkit-slider-runnable-track {
+  height: 6px;
+}
+
+.film-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.5);
+  transform: scale(0);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.film-seek::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 0.5);
+  transform: scale(0);
+  transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.film-seek:hover::-webkit-slider-thumb,
+.film-seek:active::-webkit-slider-thumb,
+.film-seek:focus-visible::-webkit-slider-thumb,
+.film-seek:hover::-moz-range-thumb,
+.film-seek:active::-moz-range-thumb,
+.film-seek:focus-visible::-moz-range-thumb {
+  transform: scale(1);
+}
+
+.film-time,
+.film-left {
   flex: none;
-  color: rgb(236 238 242 / 0.8);
-  font-size: 13px;
+  min-width: 3.2ch;
+  color: rgb(236 238 242 / 0.85);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
   font-variant-numeric: tabular-nums;
 }
 
+.film-time {
+  margin-left: 4px;
+  text-align: right;
+}
+
 @media (max-width: 520px) {
-  .film-time {
+  .film-left,
+  .film-vol {
     display: none;
   }
 }
