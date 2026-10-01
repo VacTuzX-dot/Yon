@@ -25,7 +25,7 @@ Yon (โยน, Thai for "to toss") sends files and folders between your Macs, W
 
 ## Updates
 
-- **Coming in 0.2.4:** open Yon at login (macOS and Windows), and Activity that survives a restart. See the [changelog](CHANGELOG.md).
+- **2026-10-01:** Yon 0.2.4. Open Yon at login (macOS and Windows, off by default, and it starts without a window so it uses far less memory), Activity that survives a restart, and a second film. [Changelog](CHANGELOG.md)
 - **2026-09-29:** Yon 0.2.3. Send folders, Intel Macs, Windows on ARM, an Activity list, smaller notifications and security fixes. [Changelog](CHANGELOG.md)
 - **2026-09-29:** [yon.meo.in.th](https://yon.meo.in.th/) is live, with a download button and the film.
 

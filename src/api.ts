@@ -154,6 +154,8 @@ export type SendOutcome =
 
 export const api = {
   getState: () => invoke<AppState>("get_state"),
+  /** The window has registered its listeners: replay what it missed. */
+  uiReady: () => invoke<void>("ui_ready"),
   pickFiles: () => invoke<Selection | null>("pick_files"),
   pickFolders: () => invoke<Selection | null>("pick_folders"),
   addToSelection: (id: number, folders: boolean) =>

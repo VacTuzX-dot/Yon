@@ -31,7 +31,7 @@ function hud(ctx: Ctx, T: number, s: (typeof timeline.scenes)[number]) {
   ctx.fillText("โยน", 132, 78);
   ctx.font = F.mono(16);
   ctx.fillStyle = dim;
-  ctx.fillText("FILE TRANSFER / v0.2.3", 64, 104);
+  ctx.fillText("FILE TRANSFER / v0.2.4", 64, 104);
   ctx.textAlign = "right";
   if (s.chapter) {
     ctx.font = F.mono(18, 600);

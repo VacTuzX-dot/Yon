@@ -254,7 +254,7 @@ impl ReceiverUi for TauriUi {
                 sender_name: req.sender_name,
                 total: req.total,
             };
-            let _ = self.app.emit("recv-started", dto);
+            emit_kept(&self.app, "recv-started", dto);
             if let Some(w) = self.app.get_webview_window("main") {
                 let _ = w.request_user_attention(Some(tauri::UserAttentionType::Informational));
             }
@@ -276,7 +276,7 @@ impl ReceiverUi for TauriUi {
             files: req.files,
             total: req.total,
         };
-        let _ = self.app.emit("incoming", dto);
+        emit_kept(&self.app, "incoming", dto);
         show_main(&self.app);
         if let Some(w) = self.app.get_webview_window("main") {
             let _ = w.request_user_attention(Some(tauri::UserAttentionType::Critical));
@@ -318,7 +318,8 @@ impl ReceiverUi for TauriUi {
                 }
             }
         }
-        let _ = self.app.emit(
+        emit_kept(
+            &self.app,
             "recv-finished",
             RecvFinishedDto {
                 id,
@@ -1383,7 +1384,7 @@ pub fn start_updates(app: &AppHandle) {
             if enabled {
                 match find_update(&app).await {
                     Ok(Some(dto)) => {
-                        let _ = app.emit("update-available", dto);
+                        emit_kept(&app, "update-available", dto);
                     }
                     Ok(None) => {}
                     Err(e) => eprintln!("[yon] {e}"),
@@ -1496,12 +1497,99 @@ pub fn apply_dock_visibility(_app: &AppHandle, _visible: bool) {
 
 // ---------- window + tray ----------
 
-/// Bring the main window back (from hidden, minimized or behind others).
+/// Bring the main window back (from hidden, minimized or behind others),
+/// creating it first if Yon was started without one.
 pub fn show_main(app: &AppHandle) {
+    if app.get_webview_window("main").is_none() {
+        create_main(app);
+    }
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+    }
+}
+
+/// WHY: the window is not created at startup (`"create": false` in
+/// tauri.conf.json). A login launch (`--background`) only needs the tray and
+/// the listener, and the web view behind a hidden window costs ~200 MB
+/// (WebView2 runs six processes). It is built on the first "Open".
+pub fn create_main(app: &AppHandle) {
+    let Some(config) = app.config().app.windows.first().cloned() else {
+        return;
+    };
+    match tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|b| b.build()) {
+        Ok(_) => {}
+        // Two callers can race to create it; the loser finds it already there.
+        Err(_) if app.get_webview_window("main").is_some() => {}
+        Err(e) => eprintln!("[yon] could not open the window: {e}"),
+    }
+}
+
+// ---------- events for a window that may not exist yet ----------
+
+/// Events the window cannot rebuild from `get_state`, held until it has
+/// loaded: a transfer waiting for Accept, a receive that started or finished
+/// while Yon ran in the background (Activity needs it), a new version.
+/// Progress, devices and settings are not kept: `get_state` has the current
+/// values and progress ticks again within a moment.
+struct UiGate {
+    ready: bool,
+    backlog: std::collections::VecDeque<(&'static str, serde_json::Value)>,
+}
+
+static UI_GATE: Mutex<UiGate> = Mutex::new(UiGate {
+    ready: false,
+    backlog: std::collections::VecDeque::new(),
+});
+
+const BACKLOG_MAX: usize = 64;
+
+impl UiGate {
+    /// `Some` = emit it now (the window has loaded); `None` = kept for later,
+    /// at most the newest `BACKLOG_MAX`.
+    fn accept(
+        &mut self,
+        event: &'static str,
+        value: serde_json::Value,
+    ) -> Option<(&'static str, serde_json::Value)> {
+        if self.ready {
+            return Some((event, value));
+        }
+        if event == "update-available" {
+            self.backlog.retain(|(e, _)| *e != event); // only the latest matters
+        }
+        self.backlog.push_back((event, value));
+        if self.backlog.len() > BACKLOG_MAX {
+            self.backlog.pop_front();
+        }
+        None
+    }
+
+    /// The window is listening: everything kept, oldest first.
+    fn open(&mut self) -> Vec<(&'static str, serde_json::Value)> {
+        self.ready = true;
+        self.backlog.drain(..).collect()
+    }
+}
+
+/// Like `app.emit`, for the events listed on [`UiGate`].
+fn emit_kept<S: Serialize>(app: &AppHandle, event: &'static str, payload: S) {
+    if let Ok(value) = serde_json::to_value(payload) {
+        // Emitted under the lock so a new event cannot overtake the old ones.
+        let mut gate = UI_GATE.lock().expect("lock");
+        if let Some((event, value)) = gate.accept(event, value) {
+            let _ = app.emit(event, value);
+        }
+    }
+}
+
+/// The window has registered its listeners: replay what it missed, in order.
+#[tauri::command]
+pub fn ui_ready(app: AppHandle) {
+    let mut gate = UI_GATE.lock().expect("lock");
+    for (event, value) in gate.open() {
+        let _ = app.emit(event, value);
     }
 }
 
@@ -1574,6 +1662,11 @@ pub fn paths_from_args(args: &[String], cwd: &Path) -> Vec<PathBuf> {
 /// window up with a device picker. Never sends on its own — any local
 /// program can launch us with paths, so a person must pick and confirm.
 pub fn open_paths(app: &AppHandle, paths: Vec<PathBuf>) {
+    // WHY: a plain launch has no files. Raising the window here would also
+    // bring up a login launch (`--background`) that should stay in the tray.
+    if paths.is_empty() {
+        return;
+    }
     show_main(app);
     let app = app.clone();
     // WHY: off the main thread — a big folder takes a moment to list.
@@ -1653,7 +1746,7 @@ pub fn take_shared(state: State<'_, AppState>) -> Option<SelectionDto> {
 
 #[cfg(test)]
 mod tests {
-    use super::{collect_files, paths_from_args};
+    use super::{collect_files, paths_from_args, UiGate, BACKLOG_MAX};
 
     #[test]
     fn folders_are_walked_without_links_or_clutter() {
@@ -1713,5 +1806,47 @@ mod tests {
             vec![PathBuf::from(abs), cwd.join("b.txt")]
         );
         assert!(paths_from_args(&["yon".to_string()], cwd).is_empty());
+    }
+
+    #[test]
+    fn ui_gate_holds_events_until_the_window_is_ready() {
+        use serde_json::json;
+        let mut g = UiGate {
+            ready: false,
+            backlog: Default::default(),
+        };
+        assert!(g.accept("incoming", json!(1)).is_none());
+        assert!(g.accept("recv-finished", json!(2)).is_none());
+        let order: Vec<_> = g.open().into_iter().map(|(e, _)| e).collect();
+        assert_eq!(order, ["incoming", "recv-finished"], "oldest first");
+        assert!(g.open().is_empty(), "replayed once");
+        assert_eq!(g.accept("incoming", json!(3)), Some(("incoming", json!(3))));
+    }
+
+    #[test]
+    fn ui_gate_keeps_only_the_latest_update_and_is_bounded() {
+        use serde_json::json;
+        let mut g = UiGate {
+            ready: false,
+            backlog: Default::default(),
+        };
+        g.accept("update-available", json!("0.2.4"));
+        g.accept("update-available", json!("0.2.5"));
+        for i in 0..BACKLOG_MAX + 10 {
+            g.accept("recv-finished", json!(i));
+        }
+        let kept = g.open();
+        assert_eq!(kept.len(), BACKLOG_MAX);
+        assert!(
+            !kept.iter().any(|(e, _)| *e == "update-available"),
+            "pushed out by newer events once the cap is hit"
+        );
+        let mut g = UiGate {
+            ready: false,
+            backlog: Default::default(),
+        };
+        g.accept("update-available", json!("0.2.4"));
+        g.accept("update-available", json!("0.2.5"));
+        assert_eq!(g.open(), vec![("update-available", json!("0.2.5"))]);
     }
 }

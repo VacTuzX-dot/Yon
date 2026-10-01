@@ -65,11 +65,10 @@ pub fn run() {
                 app::apply_dock_visibility(app.handle(), false);
             }
             let args: Vec<String> = std::env::args().collect();
-            // Started at login: stay in the menu bar / tray, no window.
-            if args.iter().any(|a| a == autostart::FLAG) {
-                if let Some(w) = app.get_webview_window("main") {
-                    let _ = w.hide();
-                }
+            // Started at login: stay in the menu bar / tray, with no window
+            // (and no web view: that is most of Yon's memory) until it is opened.
+            if !args.iter().any(|a| a == autostart::FLAG) {
+                app::create_main(app.handle());
             }
             // First launch from "Send to": files arrive as arguments.
             if let Ok(cwd) = std::env::current_dir() {
@@ -124,6 +123,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app::get_state,
+            app::ui_ready,
             app::pick_files,
             app::pick_folders,
             app::add_to_selection,

@@ -2,7 +2,7 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
-## Unreleased (0.2.4)
+## 0.2.4 — 2026-10-01
 
 ### New
 
@@ -11,9 +11,16 @@ Known problems are in red boxes, with the version that fixes them and what to do
 
 ### Changed
 
+- **Much less memory when Yon starts at login.** A login launch now stays in the menu bar or tray without creating its window at all, so its web view (about 150 MB on a Mac, about 200 MB on Windows, where WebView2 runs six processes) is not started until you click Open. Transfers that arrive meanwhile are not lost: a request waiting for Accept opens the window as before, and receives that finished while it was closed appear in Activity when you open it. Once opened, closing the window still only hides it.
 - **A new film, "Yon in 90 seconds"** (yon.meo.in.th/film), replacing the 72-second particle one. A blocky voxel world drawn live with WebGL through a pixel-art shader: someone needs to get a 4 GB video onto the PC across the room, a friend texts "ลอง Yon สิ", and the camera dives into the phone and flies over floating islands that show how Yon works (finding nearby devices, the TLS handshake, sealed chunks checked on arrival, whole folders, pairing a phone, the relay), then back to the room to accept the file. The soundtrack is still algorithmic, from `scripts/film_music.py` (Python standard library, no samples).
 - **An editorial cut of the film** (yon.meo.in.th/reel), next to the voxel one: a 90-second motion reel in the style of a launch video, drawn live with the 2D canvas. One idea per scene, cut on the beat at 90 bpm: the problem, the nudge from a friend, nearby devices, platforms, mutual TLS 1.3, no cloud, SHA-256 checks, 0 accounts, any size, phones, and the MIT license. Its soundtrack, `scripts/reel_music.py`, gives every on-screen event its own sound effect (Python standard library, no samples). Both films share one player (`web/film/player.ts`); `FILM=web/reel bun run scripts/render-film.ts` renders the reel to MP4.
+- The film players have a volume slider (remembered; on iPhone and iPad only the mute button, because iOS does not let a page set the volume) and floating glass controls with elapsed and remaining time.
 - Dependabot also watches the Docker images of the relay and the website (it already covered GitHub Actions, Rust and JavaScript).
+
+### Known problems
+
+> [!WARNING]
+> **A device that was already open may not show a device that opens later.** The new device sees the old one, but the old one's list stays empty until it is restarted (Quit Yon, or End task on Windows, then open it again). We have not found the cause yet; if you hit it, it helps to know which computers were involved and how long the first one had been running. Nothing is lost: transfers between devices that do see each other are not affected.
 
 ## 0.2.3 — 2026-09-29
 

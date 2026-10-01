@@ -241,6 +241,10 @@ export default function App() {
         logSend(id, result);
       }),
     ];
+    // WHY: Yon may have run for hours without this window; once the listeners
+    // exist, Rust replays what it could not deliver (a waiting transfer, a
+    // receive that finished, a new version).
+    void Promise.all(subs).then(() => api.uiReady());
     return () => {
       subs.forEach((p) => p.then((unlisten) => unlisten()));
       timers.current.forEach(clearTimeout);
