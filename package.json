@@ -30,5 +30,8 @@
     "typescript": "~6.0.3",
     "vite": "^8.0.16"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "overrides": {
+    "source-map-js": "1.2.2"
+  }
 }
