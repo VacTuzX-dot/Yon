@@ -221,3 +221,33 @@ button:focus-visible {
   color: var(--ink);
   border: 1px solid var(--line);
 }
+
+.targets button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
+header button {
+  margin-top: 0.75rem;
+}
+
+.files .info {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.files .state {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.files .forget {
+  flex: none;
+  padding: 0.4rem 0.9rem;
+  background: transparent;
+  color: var(--bad);
+  border: 1px solid var(--line);
+  font-weight: 600;
+}

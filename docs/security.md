@@ -31,6 +31,12 @@ Updates are signed. Yon installs an update only if its signature matches the pub
 - Requests from phones are labelled "web link", and you still accept each one unless you chose "Always accept".
 - The pairing key is in the QR code and the phone's saved link, so treat them like a password. Remove a phone in Settings to cut it off at once.
 - Yon Link only listens (on port 53421) while at least one phone is paired.
+- One phone can keep up to 4 computers, each with its own pairing key. All of them sit in the same browser origin (`yon.meo.in.th`), so a compromised phone page exposes up to 4 keys, not one. Threat model: [phone with several computers](threat-model-phone-computers.md); decision: [ADR-004](adr/ADR-004-phone-qr-decoding.md).
+- The camera is allowed only on the HTTPS phone page (`/phonelink/`, `Permissions-Policy: camera=(self)`). The Wi-Fi-only page keeps it blocked. The camera stops when scanning ends, succeeds, or the page closes.
+- A scanned QR is accepted only if it is a Yon relay link for that exact page. Other text, other sites and Wi-Fi-only links are refused and nothing is saved.
+- On iPhone, QR codes are decoded with jsQR 1.4.0 (Apache-2.0, version pinned) inside a Web Worker. The worker has no access to stored keys and the page never sends it one. Android uses the browser's built-in `BarcodeDetector`.
+- A stranger's Yon code scanned by mistake adds that computer to the phone. **Forget** removes it.
+- **Forget** removes a computer from the phone only. It does not unpair the phone on that computer; remove the phone in that computer's Settings for that.
 
 ## Known limits of this version
 

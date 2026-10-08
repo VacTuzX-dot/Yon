@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { decodeReply, encodeRequest, relayWsUrl } from "./transport";
+import { RelayTransport, decodeReply, encodeRequest, relayWsUrl } from "./transport";
 
 test("request frames carry id, head and body", () => {
   const f = encodeRequest(7, "POST", "/pull?o=1&f=0&i=2", [["X-Yon-Ctr", "5"]], new Uint8Array([9, 8]));
@@ -32,4 +32,31 @@ test("reply frames decode, headers case-insensitive", () => {
 test("relay addresses: wss everywhere but localhost", () => {
   expect(relayWsUrl("relay.example.com", "ab")).toBe("wss://relay.example.com/phone/ab");
   expect(relayWsUrl("localhost:8787", "ab")).toBe("ws://localhost:8787/phone/ab");
+});
+
+test("close() drops the socket and fails the request in flight", async () => {
+  let onReceived!: () => void;
+  const received = new Promise<void>((r) => (onReceived = r));
+  let onServerClosed!: () => void;
+  const serverClosed = new Promise<void>((r) => (onServerClosed = r));
+  const server = Bun.serve({
+    port: 0,
+    fetch: (req, srv) => (srv.upgrade(req) ? undefined : new Response("no", { status: 400 })),
+    websocket: {
+      message: () => onReceived(), // the request arrived; never reply
+      close: () => onServerClosed(),
+    },
+  });
+  try {
+    const t = new RelayTransport(`ws://localhost:${server.port}/phone/ab`);
+    const outcome = t
+      .send("POST", "/request", [], new Uint8Array([1]))
+      .then(() => "replied", (e: Error) => e.message);
+    await received;
+    t.close();
+    expect(await outcome).toBe("relay connection lost");
+    await serverClosed;
+  } finally {
+    server.stop(true);
+  }
 });
