@@ -1,8 +1,6 @@
 # One phone, many computers: computer list + "Add computer" scan
 
-**Status:** Approved and implemented (2026-10-09). Not built yet: offline
-computers greyed in "Send to" (only online ones are listed) and remembering
-the last choice.
+**Status:** Approved and implemented (2026-10-09).
 **Target release:** v0.2.5
 **Builds on:** ADR-001 (Yon Link), ADR-003 (relay), ADR-004 (QR decoding)
 **Phase:** 1 of 2 — pairings made with "Reach from anywhere" only
@@ -124,7 +122,7 @@ frees the slot at once instead of after its 60 s idle timeout
   file picker.
 - **Several:** the existing "Send to" chooser (`#choose` / `#targets`) lists
   every computer first (offline ones greyed), then phones reachable through
-  each, labelled "via <computer>". Last choice remembered per phone.
+  each, labelled "via <computer>". The computer used last is listed first (`yon-link-last`, its pair id).
 - Incoming offers name the sending computer.
 - `/hello` → 404 (`Gone`) for one computer: its row shows "Removed on
   <name> · Forget". If it was the only computer: today's message

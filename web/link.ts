@@ -22,6 +22,8 @@ type Offer = {
 class Gone extends Error {}
 
 const MAX_RETRIES = 20;
+/** Pair id of the computer the last accepted send went through. */
+const LAST_KEY = "yon-link-last";
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -238,6 +240,7 @@ async function send(files: File[], c: Computer, to?: Target) {
     const body = to ? { files: meta, to: to.id } : { files: meta };
     const answer = await session.call("/request", utf8ToBytes(JSON.stringify(body)));
     if (answer.result !== "accepted") return refused(answer, dest, c);
+    rememberLast(c);
 
     const chunk = answer.chunk ?? 1 << 20;
     const total = files.reduce((n, f) => n + f.size, 0);
@@ -570,26 +573,63 @@ async function peersOf(c: Computer): Promise<Target[]> {
   }
 }
 
+/** The computer used last (stored by id), if it is still in the list. */
+function lastId(): string | null {
+  try {
+    const v = storage()?.getItem(LAST_KEY) ?? null;
+    return v && /^[0-9a-f]{32}$/.test(v) && computers.some((c) => c.pairing.id === v) ? v : null;
+  } catch {
+    // storage blocked: no preference, keyring order
+    return null;
+  }
+}
+
+/** Remember the computer a send went through, so the chooser lists it first. */
+function rememberLast(c: Computer) {
+  try {
+    // WHY: best effort; with storage blocked the chooser just keeps keyring order.
+    storage()?.setItem(LAST_KEY, c.pairing.id);
+  } catch {
+    // storage blocked or full: nothing to remember
+  }
+}
+
 /** Pick a computer, or another phone reached through one. With a single
  * computer and no other phones, straight to the computer. */
 async function chooseTarget(files: File[]) {
-  const online = computers.filter((c) => c.state === "online");
-  const groups = await Promise.all(online.map(async (c) => ({ c, phones: await peersOf(c) })));
+  const reachable = computers.filter((c) => c.state !== "gone");
+  // WHY: the computer used last comes first, so the common case is one tap.
+  const last = lastId();
+  const ordered = [
+    ...reachable.filter((c) => c.pairing.id === last),
+    ...reachable.filter((c) => c.pairing.id !== last),
+  ];
+  // Peers are only asked of computers that answer now.
+  const groups = await Promise.all(
+    ordered
+      .filter((c) => c.state === "online")
+      .map(async (c) => ({ c, phones: await peersOf(c) })),
+  );
   const phoneCount = groups.reduce((n, g) => n + g.phones.length, 0);
-  if (online.length <= 1 && phoneCount === 0) return void send(files, online[0] ?? computers[0]);
+  if (reachable.length <= 1 && phoneCount === 0) return void send(files, reachable[0] ?? computers[0]);
 
-  const button = (label: string, go: () => void) => {
+  const button = (label: string, go: () => void, offline = false) => {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
     b.onclick = go;
+    if (offline) {
+      b.disabled = true;
+      b.className = "offline";
+    }
     return b;
   };
   const single = computers.length === 1;
-  const buttons: HTMLButtonElement[] = [];
-  for (const { c } of groups) {
-    buttons.push(button(single ? `${c.name} (this computer)` : c.name, () => void send(files, c)));
-  }
+  const buttons: HTMLButtonElement[] = ordered.map((c) =>
+    c.state === "online"
+      ? button(single ? `${c.name} (this computer)` : c.name, () => void send(files, c))
+      : button(`${c.name || "Computer"} — can't reach it`, () => {}, true),
+  );
   for (const { c, phones } of groups) {
     for (const p of phones) {
       buttons.push(button(single ? p.name : `${p.name} (via ${c.name})`, () => void send(files, c, p)));
@@ -598,6 +638,7 @@ async function chooseTarget(files: File[]) {
   ui.targets.replaceChildren(...buttons);
   ui.chooseCancel.onclick = pickAgain;
   show(ui.choose);
+  buttons.find((b) => !b.disabled)?.focus();
 }
 
 ui.cancel.addEventListener("click", () => {

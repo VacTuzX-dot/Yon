@@ -222,6 +222,11 @@ button:focus-visible {
   border: 1px solid var(--line);
 }
 
+.targets button:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+
 header button {
   margin-top: 0.75rem;
 }

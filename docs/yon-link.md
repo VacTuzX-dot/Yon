@@ -64,7 +64,7 @@ If the code only works on the same Wi-Fi, Yon shows: "That code only works on th
 
 ### Use several computers
 
-- **Send to** lists each online computer. Phones that reach a computer appear as "<phone> (via <computer>)".
+- **Send to** lists each computer, the one you used last first. Computers the phone can't reach right now are greyed out. Phones that reach a computer appear as "<phone> (via <computer>)".
 - Files you receive say which computer they came through.
 - **Computers** at the top of the page lists each computer as **Online**, **Can't reach it**, or **Removed on <name>**.
 - **Forget** removes a computer from this phone only. The phone stays paired on that computer. To cut the phone off there, remove it in that computer's **Settings → Phones**.
