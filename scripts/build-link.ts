@@ -48,6 +48,16 @@ await Bun.write(`${phone}/index.html`, html);
 await Bun.write(`${phone}/link.js`, js);
 await Bun.write(`${phone}/link.css`, Bun.file("web/link.css"));
 await Bun.write(`${phone}/icon.png`, icon);
+// The QR decoder for "Add computer" (ADR-004), a dedicated Worker loaded by
+// web/scan.ts only when the browser lacks BarcodeDetector. It is phone-page
+// only: the LAN page has no in-page scan in Phase 1.
+// WHY: no SRI for qr-worker.js. Workers can't carry integrity checks here, so
+// it relies on the same same-origin, CI-only deploy that protects link.js.
+const qr = await Bun.build({ entrypoints: ["web/qr-worker.ts"], outdir: phone, naming: "qr-worker.js", target: "browser", minify: true });
+if (!qr.success) {
+  for (const log of qr.logs) console.error(log);
+  process.exit(1);
+}
 
 for (const f of ["home.css", "home.js", "toss.wav"]) await Bun.write(`${site}/${f}`, Bun.file(`web/home/${f}`));
 // The download dialog links straight to this version's release files (the

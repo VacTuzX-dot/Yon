@@ -1,9 +1,12 @@
 // Yon Link phone page: pair once (QR → URL fragment), then send files to the
-// computer and receive files from it over sealed requests.
+// computer and receive files from it over sealed requests. One Home Screen icon
+// reaches every paired computer (keyring: web/keyring.ts, spec "Phone page").
 // Protocol: src-tauri/src/link/mod.rs (upload) and link/outbox.rs (download).
 // Every text shown here goes through textContent, never innerHTML.
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { COMPUTER_TO_PHONE, PHONE_TO_COMPUTER, ReplayWindow, deriveKey, open, seal } from "./crypto";
+import { MAX_COMPUTERS, addComputer, forgetComputer, loadComputers, parseScanned, type Pairing } from "./keyring";
+import { canScan, scanQr } from "./scan";
 import { RelayTransport, direct, relayWsUrl, type Transport } from "./transport";
 
 type Reply = { result: string; reason?: string; file?: number; next?: number; chunk?: number };
@@ -18,33 +21,42 @@ type Offer = {
 /** The session or the pairing no longer exists on the computer (404). */
 class Gone extends Error {}
 
-const STORE = "yon-link-pairing";
 const MAX_RETRIES = 20;
 
 const el = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-type Pairing = { p: Uint8Array; k: Uint8Array; transport: Transport };
+/** Keys and transport for one pairing. */
+type Keys = { p: Uint8Array; k: Uint8Array; transport: Transport };
 
-/** `#<pair id>.<key>` on the LAN, or `#<pair id>.<key>.<room>@<relay host>`
- * to reach the computer from anywhere through the relay (ADR-003). */
-function readPairing(): Pairing | null {
-  const parse = (s: string | null) =>
-    /^#?([0-9a-f]{32})\.([0-9a-f]{64})(?:\.([0-9a-f]{64})@([a-z0-9.-]+(?::\d{1,5})?))?$/i.exec(s ?? "");
-  let m = parse(location.hash);
-  // WHY: the fragment is the source of truth (it survives "Add to Home
-  // Screen"); localStorage is only a fallback if a browser drops it.
+/** One paired computer and its state on this page. */
+type Computer = {
+  pairing: Pairing; // as stored in the keyring
+  conn: Keys;
+  name: string; // "" until the computer has answered /hello
+  listener: Session | null;
+  state: "connecting" | "online" | "offline" | "gone";
+};
+
+/** localStorage, or null when the browser blocks it (private mode). */
+function storage(): Storage | null {
   try {
-    if (m) localStorage.setItem(STORE, m[0].replace(/^#/, ""));
-    else m = parse(localStorage.getItem(STORE));
+    return localStorage;
   } catch {
-    // storage blocked (private mode): the fragment alone is enough
+    return null;
   }
-  if (!m) return null;
+}
+
+/** `<pair id>.<key>` on the LAN, or `<pair id>.<key>.<room>@<relay host>` to reach
+ * the computer from anywhere through the relay (ADR-003). `raw` is already
+ * lowercase and checked by parsePairing. */
+function connOf(raw: string): Keys {
+  const [head, host] = raw.split("@");
+  const [p, k, room] = head.split(".");
   return {
-    p: hexToBytes(m[1].toLowerCase()),
-    k: hexToBytes(m[2].toLowerCase()),
-    transport: m[3] ? new RelayTransport(relayWsUrl(m[4].toLowerCase(), m[3].toLowerCase())) : direct,
+    p: hexToBytes(p),
+    k: hexToBytes(k),
+    transport: host ? new RelayTransport(relayWsUrl(host, room)) : direct,
   };
 }
 
@@ -60,7 +72,7 @@ class Session {
     private readonly transport: Transport,
   ) {}
 
-  static async start({ p, k, transport }: Pairing): Promise<Session> {
+  static async start({ p, k, transport }: Keys): Promise<Session> {
     const nc = crypto.getRandomValues(new Uint8Array(16));
     const res = await transport.send("GET", `/hello?p=${bytesToHex(p)}&nc=${bytesToHex(nc)}`, [], new Uint8Array());
     if (res.status === 404) throw new Gone();
@@ -123,6 +135,11 @@ const ui = {
   saved: el("saved"),
   saveHint: el("save-hint"),
   input: el<HTMLInputElement>("files"),
+  addComputer: el<HTMLButtonElement>("add-computer"),
+  manage: el<HTMLButtonElement>("manage"),
+  computers: el("computers"),
+  computerList: el<HTMLUListElement>("computer-list"),
+  computersDone: el<HTMLButtonElement>("computers-done"),
   busy: el("busy"),
   status: el("status"),
   fill: el("fill"),
@@ -134,7 +151,7 @@ const ui = {
 };
 
 function show(section: HTMLElement) {
-  for (const s of [ui.pick, ui.choose, ui.incoming, ui.busy, ui.end]) s.hidden = s !== section;
+  for (const s of [ui.pick, ui.choose, ui.incoming, ui.busy, ui.end, ui.computers]) s.hidden = s !== section;
 }
 
 function finish(text: string, tone: "ok" | "bad", button: string, action: () => void) {
@@ -174,10 +191,14 @@ function whenVisible(): Promise<void> {
   });
 }
 
+/** The computers this phone reaches. Set once in init. */
+let computers: Computer[] = [];
+
+/** How a computer is named in messages before its /hello has answered. */
+const nameOf = (c: Computer) => c.name || "your computer";
+
 // ---- Sending ----
 
-let pairing: Pairing | null = null;
-let computer = "your computer";
 let current: { session: Session; cancelled: boolean } | null = null;
 
 /** Retry network hiccups (and iOS suspending a hidden page) on the same session. */
@@ -197,9 +218,8 @@ async function retrying<T>(job: { cancelled: boolean }, fn: () => Promise<T>): P
 /** Another paired phone with Yon open; the computer relays to it. */
 type Target = { id: string; name: string };
 
-async function send(files: File[], to?: Target) {
-  if (!pairing || files.length === 0) return;
-  const dest = to?.name ?? computer;
+async function send(files: File[], c: Computer, to?: Target) {
+  if (files.length === 0) return;
   ui.status.textContent = "Connecting…";
   ui.detail.textContent = "";
   ui.fill.style.width = "0%";
@@ -208,15 +228,16 @@ async function send(files: File[], to?: Target) {
 
   let job: { session: Session; cancelled: boolean } | null = null;
   try {
-    const session = await Session.start(pairing);
+    const session = await Session.start(c.conn);
     job = current = { session, cancelled: false };
-    computer = session.computer;
+    c.name = session.computer;
+    const dest = to?.name ?? c.name;
 
-    ui.status.textContent = to ? `Sending to ${dest}…` : `Waiting for ${computer} to accept…`;
+    ui.status.textContent = to ? `Sending to ${dest}…` : `Waiting for ${c.name} to accept…`;
     const meta = files.map((f) => ({ name: f.name, size: f.size }));
     const body = to ? { files: meta, to: to.id } : { files: meta };
     const answer = await session.call("/request", utf8ToBytes(JSON.stringify(body)));
-    if (answer.result !== "accepted") return refused(answer, dest);
+    if (answer.result !== "accepted") return refused(answer, dest, c);
 
     const chunk = answer.chunk ?? 1 << 20;
     const total = files.reduce((n, f) => n + f.size, 0);
@@ -233,7 +254,7 @@ async function send(files: File[], to?: Target) {
         const start = i * chunk;
         const data = new Uint8Array(await file.slice(start, start + chunk).arrayBuffer());
         const r = await retrying(job, () => session.call(`/chunk?f=${f}&i=${i}`, data));
-        if (r.result !== "ok" && r.result !== "resume") return stopped(r);
+        if (r.result !== "ok" && r.result !== "resume") return stopped(r, c);
         // WHY: always continue from the computer's position; it is the only
         // side that knows what was written (a lost reply looks like a failure here).
         if (!Number.isSafeInteger(r.file) || !Number.isSafeInteger(r.next) || r.file! > files.length) {
@@ -247,7 +268,7 @@ async function send(files: File[], to?: Target) {
       const done = await retrying(job, () => session.call("/done"));
       if (done.result === "completed") break;
       if (done.result !== "resume" || !Number.isSafeInteger(done.file) || !Number.isSafeInteger(done.next)) {
-        return stopped(done);
+        return stopped(done, c);
       }
       f = done.file!;
       i = done.next!;
@@ -256,7 +277,7 @@ async function send(files: File[], to?: Target) {
     finish(
       to
         ? `Sent ${n}. ${dest} will be asked to receive ${files.length === 1 ? "it" : "them"}.`
-        : `Sent ${n} to ${computer}.`,
+        : `Sent ${n} to ${c.name}.`,
       "ok",
       "Send more",
       pickAgain,
@@ -273,28 +294,29 @@ async function send(files: File[], to?: Target) {
         pickAgain,
       );
     } else {
-      finish(`Can't reach ${computer}. Check that it's on the same Wi-Fi and Yon is open.`, "bad", "Try again", pickAgain);
+      finish(`Can't reach ${nameOf(c)}. Check that it's on the same Wi-Fi and Yon is open.`, "bad", "Try again", pickAgain);
     }
   } finally {
     if (current === job) current = null;
   }
 }
 
-function refused(r: Reply, dest: string) {
+function refused(r: Reply, dest: string, c: Computer) {
+  const who = nameOf(c);
   const text: Record<string, string> = {
     declined: `${dest} declined.`,
-    busy: `${computer} is busy with another transfer. Try again in a moment.`,
-    insufficient_space: `Not enough free space on ${computer}.`,
+    busy: `${who} is busy with another transfer. Try again in a moment.`,
+    insufficient_space: `Not enough free space on ${who}.`,
     unavailable: `${dest} isn't available. Ask them to open Yon on their phone.`,
     too_big: "Phones can receive up to 1 GB at a time. Send fewer files.",
   };
   finish(text[r.result] ?? `Can't send: ${r.reason ?? r.result}.`, "bad", "Send something else", pickAgain);
 }
 
-function stopped(r: Reply) {
+function stopped(r: Reply, c: Computer) {
   const text =
     r.result === "cancelled"
-      ? `Cancelled on ${computer}.`
+      ? `Cancelled on ${nameOf(c)}.`
       : `Sending failed${r.reason ? `: ${r.reason}` : ""}. Files already sent were kept.`;
   finish(text, "bad", "Send again", pickAgain);
 }
@@ -303,6 +325,9 @@ function pickAgain() {
   show(ui.pick);
 }
 
+/** Can this page scan a pairing? HTTPS only, storage to keep it, and a camera. */
+const canAddComputer = () => location.protocol === "https:" && storage() !== null && canScan();
+
 // ---- Receiving (computer → phone) ----
 
 const standalone =
@@ -310,8 +335,6 @@ const standalone =
   (navigator as Navigator & { standalone?: boolean }).standalone === true;
 /** Parallel chunk requests: fills the Wi-Fi without much memory (spike: 1 → ~3× faster). */
 const PULLS = 3;
-/** Session for /inbox and downloads; replaced when it expires. */
-let listener: Session | null = null;
 let receiving: { cancelled: boolean } | null = null;
 
 class Stop extends Error {
@@ -335,26 +358,30 @@ function isOffer(o: unknown): o is Offer {
   );
 }
 
-async function listenerSession(): Promise<Session> {
-  if (!listener) listener = await Session.start(pairing!);
-  return listener;
+/** The computer's listener session for /inbox and downloads; replaced when it expires. */
+async function listenerSession(c: Computer): Promise<Session> {
+  if (!c.listener) {
+    c.listener = await Session.start(c.conn);
+    c.name = c.listener.computer;
+  }
+  return c.listener;
 }
 
 /** Run with the listener session; if it expired (iOS suspended the page for
  * a while), start a new one and try again. Offers belong to the phone, so a
  * new session carries on where the old one stopped. */
-async function withListener<T>(fn: (s: Session) => Promise<T>): Promise<T> {
+async function withListener<T>(c: Computer, fn: (s: Session) => Promise<T>): Promise<T> {
   try {
-    return await fn(await listenerSession());
+    return await fn(await listenerSession(c));
   } catch (e) {
     if (!(e instanceof Gone)) throw e;
-    listener = null;
-    return fn(await listenerSession());
+    c.listener = null;
+    return fn(await listenerSession(c));
   }
 }
 
-/** Ask the computer for offers while the page is visible and idle. */
-async function listen() {
+/** Ask one computer for offers while the page is visible and idle. One loop per computer. */
+async function listen(c: Computer) {
   let backoff = 1000;
   for (;;) {
     await whenVisible();
@@ -363,12 +390,19 @@ async function listen() {
       continue;
     }
     try {
-      const r = (await withListener((s) => s.call("/inbox"))) as unknown as { offer: unknown };
+      const r = (await withListener(c, (s) => s.call("/inbox"))) as unknown as { offer: unknown };
       backoff = 1000;
-      if (r.offer && isOffer(r.offer) && !current && !receiving) showOffer(r.offer);
+      c.state = "online";
+      // WHY: another computer may have shown an offer in the same poll window; a
+      // skipped offer is not lost: /inbox returns it again on the next poll.
+      if (r.offer && isOffer(r.offer) && !current && !receiving && ui.incoming.hidden) showOffer(c, r.offer);
     } catch (e) {
-      listener = null;
-      if (e instanceof Gone) return; // not paired any more: hello says 404
+      c.listener = null;
+      if (e instanceof Gone) {
+        c.state = "gone"; // not paired any more: hello says 404
+        return;
+      }
+      c.state = "offline";
       await sleep(backoff);
       backoff = Math.min(backoff * 2, 15000);
     }
@@ -387,14 +421,16 @@ function fileRow(name: string, size: number): HTMLLIElement {
   return li;
 }
 
-function showOffer(o: Offer) {
+function showOffer(c: Computer, o: Offer) {
   const n = o.files.length === 1 ? "a file" : `${o.files.length} files`;
-  ui.offerText.textContent = `${o.from} wants to send you ${n} (${formatBytes(o.total)}).`;
+  // WHY: with several computers, say which one the offer came through.
+  const via = computers.length > 1 ? ` via ${c.name}` : "";
+  ui.offerText.textContent = `${o.from} wants to send you ${n} (${formatBytes(o.total)})${via}.`;
   ui.offerFiles.replaceChildren(...o.files.slice(0, 5).map((f) => fileRow(f.name, f.size)));
   if (o.files.length > 5) ui.offerFiles.append(fileRow(`and ${o.files.length - 5} more`, o.total));
-  ui.receive.onclick = () => void receive(o);
+  ui.receive.onclick = () => void receive(c, o);
   ui.decline.onclick = () => {
-    void withListener((s) => s.call(`/offer/decline?o=${o.id}`)).catch(() => {});
+    void withListener(c, (s) => s.call(`/offer/decline?o=${o.id}`)).catch(() => {});
     pickAgain();
   };
   show(ui.incoming);
@@ -422,8 +458,8 @@ function save(name: string, blob: Blob) {
   setTimeout(() => URL.revokeObjectURL(a.href), 60_000);
 }
 
-async function pull(o: Offer, f: number, i: number): Promise<Uint8Array> {
-  const plain = await withListener((s) => s.request(`/pull?o=${o.id}&f=${f}&i=${i}`));
+async function pull(c: Computer, o: Offer, f: number, i: number): Promise<Uint8Array> {
+  const plain = await withListener(c, (s) => s.request(`/pull?o=${o.id}&f=${f}&i=${i}`));
   if (plain[0] !== 0) {
     const r = JSON.parse(new TextDecoder().decode(plain.subarray(1))) as Reply;
     throw new Stop(r.result);
@@ -435,7 +471,7 @@ async function pull(o: Offer, f: number, i: number): Promise<Uint8Array> {
   return data;
 }
 
-async function receive(o: Offer) {
+async function receive(c: Computer, o: Offer) {
   const job = { cancelled: false };
   receiving = job;
   ui.status.textContent = `Receiving from ${o.from}`;
@@ -444,13 +480,13 @@ async function receive(o: Offer) {
   ui.cancel.hidden = false;
   ui.cancel.onclick = () => {
     job.cancelled = true;
-    void withListener((s) => s.call(`/offer/cancel?o=${o.id}`)).catch(() => {});
+    void withListener(c, (s) => s.call(`/offer/cancel?o=${o.id}`)).catch(() => {});
     finish("Cancelled.", "bad", "Done", pickAgain);
   };
   show(ui.busy);
   const received: { name: string; blob: Blob }[] = [];
   try {
-    const ok = await withListener((s) => s.call(`/offer/accept?o=${o.id}`));
+    const ok = await withListener(c, (s) => s.call(`/offer/accept?o=${o.id}`));
     if (ok.result !== "accepted") throw new Stop(ok.result);
     let done = 0;
     for (let f = 0; f < o.files.length; f++) {
@@ -463,7 +499,7 @@ async function receive(o: Offer) {
       const worker = async () => {
         while (next < count && !job.cancelled) {
           const i = next++;
-          const data = await retrying(job, () => pull(o, f, i));
+          const data = await retrying(job, () => pull(c, o, f, i));
           parts[i] = new Blob([data as BlobPart]);
           done += data.length;
           progress(done, o.total);
@@ -475,7 +511,7 @@ async function receive(o: Offer) {
       received.push({ name: file.name, blob });
       if (!standalone) save(file.name, blob);
     }
-    const end = await withListener((s) => s.call(`/offer/done?o=${o.id}`));
+    const end = await withListener(c, (s) => s.call(`/offer/done?o=${o.id}`));
     if (end.result !== "completed") throw new Stop(end.result);
     const n = received.length === 1 ? "1 file" : `${received.length} files`;
     finish(`Received ${n} from ${o.from}.`, "ok", "Done", pickAgain);
@@ -520,20 +556,28 @@ ui.input.addEventListener("change", () => {
   if (files.length > 0) void chooseTarget(files);
 });
 
-/** Other phones with Yon open can be picked too; otherwise straight to the computer. */
-async function chooseTarget(files: File[]) {
-  let phones: Target[] = [];
+/** Other phones reachable through one computer; [] if they can't be listed. */
+async function peersOf(c: Computer): Promise<Target[]> {
   try {
-    const r = (await withListener((s) => s.call("/peers"))) as unknown as { phones?: unknown };
-    if (Array.isArray(r.phones)) {
-      phones = r.phones.filter(
-        (p): p is Target => typeof p?.id === "string" && /^[0-9a-f]{16}$/.test(p.id) && typeof p?.name === "string",
-      );
-    }
+    const r = (await withListener(c, (s) => s.call("/peers"))) as unknown as { phones?: unknown };
+    if (!Array.isArray(r.phones)) return [];
+    return r.phones.filter(
+      (p): p is Target => typeof p?.id === "string" && /^[0-9a-f]{16}$/.test(p.id) && typeof p?.name === "string",
+    );
   } catch {
     // can't list phones: the computer is still a fine default
+    return [];
   }
-  if (phones.length === 0) return void send(files);
+}
+
+/** Pick a computer, or another phone reached through one. With a single
+ * computer and no other phones, straight to the computer. */
+async function chooseTarget(files: File[]) {
+  const online = computers.filter((c) => c.state === "online");
+  const groups = await Promise.all(online.map(async (c) => ({ c, phones: await peersOf(c) })));
+  const phoneCount = groups.reduce((n, g) => n + g.phones.length, 0);
+  if (online.length <= 1 && phoneCount === 0) return void send(files, online[0] ?? computers[0]);
+
   const button = (label: string, go: () => void) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -541,10 +585,17 @@ async function chooseTarget(files: File[]) {
     b.onclick = go;
     return b;
   };
-  ui.targets.replaceChildren(
-    button(`${computer} (this computer)`, () => void send(files)),
-    ...phones.map((p) => button(p.name, () => void send(files, p))),
-  );
+  const single = computers.length === 1;
+  const buttons: HTMLButtonElement[] = [];
+  for (const { c } of groups) {
+    buttons.push(button(single ? `${c.name} (this computer)` : c.name, () => void send(files, c)));
+  }
+  for (const { c, phones } of groups) {
+    for (const p of phones) {
+      buttons.push(button(single ? p.name : `${p.name} (via ${c.name})`, () => void send(files, c, p)));
+    }
+  }
+  ui.targets.replaceChildren(...buttons);
   ui.chooseCancel.onclick = pickAgain;
   show(ui.choose);
 }
@@ -558,27 +609,162 @@ ui.cancel.addEventListener("click", () => {
   finish("Cancelled.", "bad", "Send something else", pickAgain);
 });
 
+// ---- Computers: list, forget, add by scan ----
+
+function stateText(c: Computer): string {
+  switch (c.state) {
+    case "online":
+      return "Online";
+    case "offline":
+      return "Can't reach it";
+    case "gone":
+      return c.name
+        ? `Removed on ${c.name} — this phone isn't paired anymore`
+        : "Removed on the computer — this phone isn't paired anymore";
+    default:
+      return "Connecting…";
+  }
+}
+
+function openComputers() {
+  ui.computerList.replaceChildren(
+    ...computers.map((c) => {
+      const li = document.createElement("li");
+      const info = document.createElement("div");
+      info.className = "info";
+      const name = document.createElement("span");
+      name.textContent = c.name || "Computer";
+      const state = document.createElement("span");
+      state.className = "state";
+      state.textContent = stateText(c);
+      info.append(name, state);
+      const forget = document.createElement("button");
+      forget.type = "button";
+      forget.className = "forget";
+      forget.textContent = "Forget";
+      forget.onclick = () => {
+        forgetComputer(storage(), c.pairing.id);
+        location.reload();
+      };
+      li.append(info, forget);
+      return li;
+    }),
+  );
+  show(ui.computers);
+}
+
+const FULL_TEXT = "This phone can keep 4 computers. Forget one first.";
+const CAMERA_DENIED =
+  "Yon can't use the camera. Allow it in your browser settings, or scan the code with the Camera app and open the link.";
+
+/** The screen with no computers yet: scan the first pairing. */
+function showFirstScan() {
+  ui.subtitle.textContent = "Scan the QR code in Yon on your computer (Settings → Phones → Pair a phone).";
+  finish("", "ok", "Add computer", () => void addFromScan());
+}
+
+/** Back action: the pick screen, or the first-scan screen when there are no computers. */
+function home() {
+  if (computers.length === 0) showFirstScan();
+  else pickAgain();
+}
+
+/** Scan a computer's pairing QR (Settings → Phones → Pair a phone) and keep that computer on this phone. */
+async function addFromScan() {
+  if (computers.length >= MAX_COMPUTERS) return finish(FULL_TEXT, "bad", "Back", home);
+
+  let text: string;
+  try {
+    text = await scanQr();
+  } catch (e) {
+    const name = (e as { name?: string } | null)?.name;
+    if (name === "AbortError") return home(); // Cancel in the scanner
+    return finish(name === "NotAllowedError" ? CAMERA_DENIED : "Can't open the camera.", "bad", "Back", home);
+  }
+
+  const parsed = parseScanned(text, location);
+  if (!parsed.ok) {
+    return finish(
+      parsed.reason === "lan"
+        ? "That code only works on the same Wi-Fi. Turn on Reach from anywhere in Yon on that computer, then show the code again."
+        : "This isn't a Yon pairing code.",
+      "bad",
+      "Back",
+      home,
+    );
+  }
+  switch (addComputer(storage(), parsed.pairing)) {
+    case "added":
+    case "exists":
+      // WHY: a reload reads the keyring again, which starts the new computer's session.
+      location.reload();
+      return;
+    case "full":
+      return finish(FULL_TEXT, "bad", "Back", home);
+    case "blocked":
+      return finish("This browser can't keep another computer.", "bad", "Back", home);
+  }
+}
+
+ui.addComputer.addEventListener("click", () => void addFromScan());
+ui.manage.addEventListener("click", openComputers);
+ui.computersDone.addEventListener("click", pickAgain);
+
+// WHY: closing the socket frees the relay slot now (the relay allows 16 per IP);
+// the transports reconnect on the next request.
+window.addEventListener("pagehide", () => {
+  for (const c of computers) c.conn.transport.close?.();
+});
+
+// ---- Start ----
+
 async function init() {
-  pairing = readPairing();
   el("add-home").hidden = standalone;
-  if (!pairing) {
+  // WHY: the LAN page (http) is one computer per origin (spec Phase 2): only the
+  // fragment pairing, which loadComputers puts first, not older stored ones.
+  const saved = loadComputers(location.hash, storage());
+  const list = location.protocol === "https:" ? saved : saved.slice(0, 1);
+  computers = list.map((pairing) => ({
+    pairing,
+    conn: connOf(pairing.raw),
+    name: "",
+    listener: null,
+    state: "connecting",
+  }));
+  if (computers.length === 0) {
+    if (canAddComputer()) return showFirstScan();
     ui.subtitle.textContent = "Open this page by scanning the QR code in Yon on your computer (Settings → Phones).";
     return;
   }
-  try {
-    const s = await listenerSession();
-    computer = s.computer;
-    el("title").textContent = `Send to ${computer}`;
-    ui.subtitle.textContent = "Paired with Yon";
-    show(ui.pick);
-    void listen();
-  } catch (e) {
-    ui.subtitle.textContent =
-      e instanceof Gone
-        ? "This phone isn't paired with the computer anymore. Pair it again from Yon's settings."
-        : "Can't reach the computer. Check that it's on the same Wi-Fi and Yon is open.";
+  ui.manage.hidden = false;
+  // WHY: scanning needs the HTTPS page (camera permission), local storage and a camera.
+  ui.addComputer.hidden = !canAddComputer();
+
+  const settled = await Promise.allSettled(computers.map((c) => listenerSession(c)));
+  settled.forEach((r, i) => {
+    const c = computers[i];
+    if (r.status === "fulfilled") c.state = "online";
+    else c.state = r.reason instanceof Gone ? "gone" : "offline";
+  });
+  // WHY: an offline computer is retried by its loop (backoff), so it can come
+  // online later; only a "gone" one (not paired any more) has nothing to poll.
+  for (const c of computers) if (c.state !== "gone") void listen(c);
+
+  const online = computers.filter((c) => c.state === "online");
+  if (online.length === 0) {
+    if (computers.length > 1) {
+      ui.subtitle.textContent = "Can't reach your computers. Check that Yon is open on them, then try again.";
+    } else if (computers[0].state === "gone") {
+      ui.subtitle.textContent = "This phone isn't paired with the computer anymore. Pair it again from Yon's settings.";
+    } else {
+      ui.subtitle.textContent = "Can't reach the computer. Check that it's on the same Wi-Fi and Yon is open.";
+    }
     finish("", "bad", "Try again", () => location.reload());
+    return;
   }
+  el("title").textContent = computers.length === 1 ? `Send to ${computers[0].name}` : "Send with Yon";
+  ui.subtitle.textContent = "Paired with Yon";
+  show(ui.pick);
 }
 
 // A new QR scanned while this page is open only changes the fragment.

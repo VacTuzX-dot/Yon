@@ -157,7 +157,6 @@ test("security headers on every response", async () => {
     "strict-transport-security": "max-age=31536000",
     "x-frame-options": "DENY",
     "cross-origin-opener-policy": "same-origin",
-    "permissions-policy": "camera=(), microphone=(), geolocation=()",
     "cache-control": "no-cache",
   };
   const responses = [
@@ -171,6 +170,23 @@ test("security headers on every response", async () => {
   for (const res of responses) {
     for (const [k, v] of Object.entries(expected)) expect(res.headers.get(k), `${res.url} ${k}`).toBe(v);
     expect(res.headers.get("content-security-policy")).toContain("frame-ancestors 'none'");
+  }
+});
+
+test("camera is allowed only on the phone page", async () => {
+  const phone = "camera=(self), microphone=(), geolocation=()";
+  const site = "camera=(), microphone=(), geolocation=()";
+  const pages: Record<string, string> = {
+    "/phonelink/": phone,
+    "/": site,
+    "/home.js": site,
+    "/phonelink": site, // the 301 itself is not the phone page
+    "/nope": site,
+    "/phonelink/nope": phone, // 404 under the phone path carries the phone CSP too
+  };
+  for (const [path, policy] of Object.entries(pages)) {
+    const res = await fetch(`${base}${path}`, { redirect: "manual" });
+    expect(res.headers.get("permissions-policy"), path).toBe(policy);
   }
 });
 

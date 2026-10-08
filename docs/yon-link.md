@@ -46,3 +46,28 @@ bun relay/check.ts wss://<your host>
 ```
 
 `.github/workflows/relay.yml` and `relay/deploy.sh` deploy it with health checks and rollback. `.github/workflows/website.yml` and `website/deploy.sh` do the same for the website.
+
+## Use one phone with several computers
+
+One Yon icon on your phone can keep up to 4 computers. Each computer keeps its own pairing. This works for computers paired with **Reach from anywhere** turned on.
+
+### Add a computer
+
+1. On the computer you want to add: **Settings → Phones → Pair a phone**. Leave the QR code on the screen.
+2. On the phone, tap the Yon icon, then **Add computer**.
+3. Point the phone's camera at the QR code. The computer is added and appears in the list.
+
+If the code only works on the same Wi-Fi, Yon shows: "That code only works on the same Wi-Fi. Turn on Reach from anywhere in Yon on that computer, then show the code again."
+
+- On Android, scanning a computer's code with the Camera app and opening the link also adds it. On iPhone the link opens in Safari, not in the Yon icon, so use **Add computer**.
+- A phone can keep 4 computers. To add another, tap **Forget** on one first.
+
+### Use several computers
+
+- **Send to** lists each online computer. Phones that reach a computer appear as "<phone> (via <computer>)".
+- Files you receive say which computer they came through.
+- **Computers** at the top of the page lists each computer as **Online**, **Can't reach it**, or **Removed on <name>**.
+- **Forget** removes a computer from this phone only. The phone stays paired on that computer. To cut the phone off there, remove it in that computer's **Settings → Phones**.
+- A computer that shows **Removed on <name>** no longer has this phone paired. Forget it, or pair the phone again.
+
+Pages opened on your home Wi-Fi only (without Reach from anywhere) still work with one computer each.

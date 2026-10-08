@@ -102,8 +102,11 @@ export function loadSite(dir: string): Site {
 }
 
 function headers(path: string, extra: Record<string, string>): Headers {
+  const phone = path.startsWith("/phonelink/");
   const h = new Headers(COMMON);
-  h.set("Content-Security-Policy", path.startsWith("/phonelink/") ? CSP_PHONE : CSP_SITE);
+  h.set("Content-Security-Policy", phone ? CSP_PHONE : CSP_SITE);
+  // WHY: the phone page scans pairing QR codes in-page (docs/superpowers/specs/2026-10-09-phone-many-computers-design.md), so it alone may use the camera.
+  if (phone) h.set("Permissions-Policy", "camera=(self), microphone=(), geolocation=()");
   for (const [k, v] of Object.entries(extra)) h.set(k, v);
   return h;
 }

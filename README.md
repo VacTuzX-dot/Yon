@@ -122,7 +122,7 @@ On Windows (PowerShell), compare the output of `Get-FileHash .\Yon_x.y.z_x64-set
 2. On the phone: scan the code with the Camera and tap the link.
 3. Tap Share → **Add to Home Screen**.
 
-From then on, tap the Yon icon on the phone. Sending from the computer to a phone, phone to phone, using it away from home and running your own relay are in [Yon Link](docs/yon-link.md).
+From then on, tap the Yon icon on the phone. Sending from the computer to a phone, phone to phone, using it away from home and running your own relay are in [Yon Link](docs/yon-link.md). One phone can also keep up to 4 computers: see [Use one phone with several computers](docs/yon-link.md#use-one-phone-with-several-computers).
 
 ## Security
 

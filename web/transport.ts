@@ -7,6 +7,8 @@ export type Reply = { status: number; header(name: string): string | null; body:
 
 export interface Transport {
   send(method: string, target: string, headers: [string, string][], body: Uint8Array, signal?: AbortSignal): Promise<Reply>;
+  /** Drop an open connection now; the next send reconnects. */
+  close?(): void;
 }
 
 export const direct: Transport = {
@@ -104,6 +106,11 @@ export class RelayTransport implements Transport {
       };
     });
     return this.opening;
+  }
+
+  /** Closing fires onclose, which fails the requests in flight with a TypeError. */
+  close(): void {
+    this.ws?.close();
   }
 
   async send(method: string, target: string, headers: [string, string][], body: Uint8Array, signal?: AbortSignal) {
