@@ -19,13 +19,15 @@
         <img src="icon.png" alt="" width="56" height="56" />
         <h1 id="title">Yon</h1>
         <p id="subtitle">Connecting…</p>
-        <button id="manage" class="quiet" type="button" hidden>Computers</button>
+        <div id="actions" class="actions">
+          <button id="manage" class="quiet" type="button" hidden>Computers</button>
+          <button id="add-computer" class="quiet" type="button" hidden>Add computer</button>
+        </div>
       </header>
 
       <section id="pick" hidden>
         <input id="files" type="file" multiple />
         <label class="big" for="files">Send photos &amp; files</label>
-        <button id="add-computer" class="quiet" type="button" hidden>Add computer</button>
         <p class="hint" id="add-home" hidden>
           Tip: tap Share, then “Add to Home Screen”. Next time just tap the Yon icon.
         </p>
