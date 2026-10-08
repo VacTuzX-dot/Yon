@@ -137,6 +137,7 @@ const ui = {
   saved: el("saved"),
   saveHint: el("save-hint"),
   input: el<HTMLInputElement>("files"),
+  actions: el("actions"),
   addComputer: el<HTMLButtonElement>("add-computer"),
   manage: el<HTMLButtonElement>("manage"),
   computers: el("computers"),
@@ -154,6 +155,8 @@ const ui = {
 
 function show(section: HTMLElement) {
   for (const s of [ui.pick, ui.choose, ui.incoming, ui.busy, ui.end, ui.computers]) s.hidden = s !== section;
+  // WHY: a header button would cover the transfer or offer screen while it runs on.
+  ui.actions.hidden = section === ui.busy || section === ui.incoming;
 }
 
 function finish(text: string, tone: "ok" | "bad", button: string, action: () => void) {
@@ -198,6 +201,13 @@ let computers: Computer[] = [];
 
 /** How a computer is named in messages before its /hello has answered. */
 const nameOf = (c: Computer) => c.name || "your computer";
+
+/** "Can't reach" text. Wi-Fi only matters for a LAN pairing; a relay pairing needs Reach from anywhere. */
+function unreachable(c: Computer, name = nameOf(c)): string {
+  return c.pairing.relay
+    ? `Can't reach ${name}. Check that Yon is open on it and Reach from anywhere is on.`
+    : `Can't reach ${name}. Check that it's on the same Wi-Fi and Yon is open.`;
+}
 
 // ---- Sending ----
 
@@ -297,7 +307,7 @@ async function send(files: File[], c: Computer, to?: Target) {
         pickAgain,
       );
     } else {
-      finish(`Can't reach ${nameOf(c)}. Check that it's on the same Wi-Fi and Yon is open.`, "bad", "Try again", pickAgain);
+      finish(unreachable(c), "bad", "Try again", pickAgain);
     }
   } finally {
     if (current === job) current = null;
@@ -798,7 +808,7 @@ async function init() {
     } else if (computers[0].state === "gone") {
       ui.subtitle.textContent = "This phone isn't paired with the computer anymore. Pair it again from Yon's settings.";
     } else {
-      ui.subtitle.textContent = "Can't reach the computer. Check that it's on the same Wi-Fi and Yon is open.";
+      ui.subtitle.textContent = unreachable(computers[0], "the computer");
     }
     finish("", "bad", "Try again", () => location.reload());
     return;
