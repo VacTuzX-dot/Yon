@@ -1,5 +1,5 @@
 # Yon Link relay (ADR-003). No dependencies beyond Bun itself.
-FROM oven/bun:1.3-alpine
+FROM oven/bun:1.4-alpine
 WORKDIR /app
 # check.ts is the deploy smoke test (run from this image, never by the relay).
 COPY relay.ts check.ts ./
