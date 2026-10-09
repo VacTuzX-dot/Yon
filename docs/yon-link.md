@@ -8,6 +8,8 @@ iPhone and Android phones send photos and files to your computer through a small
 2. On the phone: open the Camera, scan the code, tap the link. The phone must be on the same Wi-Fi.
 3. Tap Share → **Add to Home Screen** (Android: menu ⋮ → Add to Home screen).
 
+Yon asks first whether the phone already has the Yon icon. If it does (the phone is paired with another computer), choose **Yon is already on this phone**: on the phone, open Yon, tap **Add computer**, and scan. That keeps one Yon icon for all your computers. This path needs Reach from anywhere; if it's off, Yon offers to turn it on.
+
 If the link doesn't open (some Android phones can't use `.local` names), tap **Link doesn't open?** under the QR code for a code that uses the computer's IP address instead.
 
 ## Send and receive

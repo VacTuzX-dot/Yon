@@ -82,8 +82,9 @@ interface Props {
   tap; (4) Home Screen with the new Yon icon appearing.
 - Step highlight: in both variants step 1 → scene 1, step 2 → scene 2,
   step 3 → scenes 3 and 4, through CSS animation on each `<li>` with the same
-  8 s duration and per-step delays; the highlighted step gets the accent
-  colour and weight. No JS timers.
+  8 s duration and per-step delays; the highlighted step is `--ink`, the others `--muted`
+  (accent text on white is ~2:1, below WCAG AA; no weight change, so no
+  layout shift). No JS timers.
 - **Pause/Play** button under the phone (WCAG 2.2.2): toggles
   `animation-play-state: paused` via a class; label "Pause animation" /
   "Play animation".
