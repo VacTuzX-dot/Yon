@@ -1366,3 +1366,134 @@ header.scrolled {
     }
   }
 }
+
+/* ---- Pair a phone: phone animation (spec 2026-10-09-pair-phone-tutorial) ---- */
+.tutorial {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin: 12px 0;
+}
+.tutorial-phone {
+  flex: none;
+  width: 140px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.tutorial-phone svg {
+  width: 140px;
+  height: 280px;
+}
+.tutorial-frame {
+  fill: var(--avatar);
+  stroke: var(--line);
+  stroke-width: 2;
+}
+.tutorial-steps {
+  flex: 1;
+  margin: 0;
+}
+.tutorial-steps li {
+  transition: color 0.2s;
+}
+/* WHY: without motion the key scene (the one action that matters) is shown still. */
+.tutorial-scene {
+  opacity: 0;
+}
+.tutorial-scene.key {
+  opacity: 1;
+}
+.tutorial-tap,
+.tutorial-sweep {
+  opacity: 0;
+}
+.tutorial-toggle {
+  display: none;
+}
+@media (max-width: 420px) {
+  .tutorial {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .tutorial-toggle {
+    display: inline;
+  }
+  /* WHY: negative delays start each scene at its own slot of the 8 s loop. */
+  .tutorial-scene {
+    animation: tutorial-scene 8s linear infinite;
+  }
+  .tutorial-scene.s0 { animation-delay: 0s; }
+  .tutorial-scene.s1 { animation-delay: -6s; }
+  .tutorial-scene.s2 { animation-delay: -4s; }
+  .tutorial-scene.s3 { animation-delay: -2s; }
+  .tutorial-scene .tutorial-tap {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: tutorial-tap 8s ease-out infinite;
+    animation-delay: inherit;
+  }
+  .tutorial-scene .tutorial-sweep {
+    animation: tutorial-sweep 8s ease-in-out infinite;
+    animation-delay: inherit;
+  }
+  .tutorial-steps li {
+    animation: tutorial-step 8s linear infinite;
+  }
+  .tutorial-steps li.st0 { animation-delay: 0s; }
+  .tutorial-steps li.st1 { animation-delay: -6s; }
+  .tutorial-steps li.st2 { animation-name: tutorial-step-long; animation-delay: -4s; }
+  .tutorial.paused * {
+    animation-play-state: paused;
+  }
+
+  @keyframes tutorial-scene {
+    0% { opacity: 0; }
+    3% { opacity: 1; }
+    22% { opacity: 1; }
+    25% { opacity: 0; }
+    100% { opacity: 0; }
+  }
+  @keyframes tutorial-tap {
+    0%, 10% { opacity: 0; transform: scale(0.4); }
+    12% { opacity: 0.9; transform: scale(0.6); }
+    20% { opacity: 0; transform: scale(1.6); }
+    100% { opacity: 0; transform: scale(1.6); }
+  }
+  @keyframes tutorial-sweep {
+    0%, 3% { opacity: 0; transform: translateY(0); }
+    5% { opacity: 1; }
+    20% { opacity: 1; transform: translateY(62px); }
+    22%, 100% { opacity: 0; transform: translateY(62px); }
+  }
+  @keyframes tutorial-step {
+    0%, 24% { color: var(--ink); }
+    25%, 100% { color: var(--muted); }
+  }
+  @keyframes tutorial-step-long {
+    0%, 49% { color: var(--ink); }
+    50%, 100% { color: var(--muted); }
+  }
+}
+
+/* ---- Pair a phone: choice buttons in the name form ---- */
+.pair-choice {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.pair-choice legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-weight: 600;
+}
+.pair-choice button {
+  width: 100%;
+}

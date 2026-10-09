@@ -578,6 +578,7 @@ export default function App() {
         <PairPhoneSheet
           online={state.online_phones}
           phones={state.settings.phones}
+          settings={state.settings}
           onPaired={(settings) => setState((s) => (s ? { ...s, settings } : s))}
           onClose={() => setPairing(false)}
         />

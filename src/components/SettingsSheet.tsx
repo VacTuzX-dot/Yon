@@ -342,6 +342,7 @@ export default function SettingsSheet({ state, onChange, onUpdate, onClose }: Pr
           online={state.online_phones}
           phones={state.settings.phones}
           replace={pairing.replace}
+          settings={state.settings}
           onPaired={(settings) => onChange({ ...state, settings })}
           onClose={() => setPairing(null)}
         />
