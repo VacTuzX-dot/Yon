@@ -2,6 +2,27 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
+## 0.2.5 — 2026-10-09
+
+### New
+
+- **One Yon icon for all your computers.** The Yon icon on a phone now keeps up to 4 computers instead of one, so pairing a second computer no longer means a second icon on the Home Screen. In the icon, tap **Add computer** and scan the code from **Settings → Phones → Pair a phone** on the other computer: the phone page reads the QR code itself, because on iPhone a code scanned with the Camera app opens in Safari, not in the icon. This works for computers with **Reach from anywhere** on. **Send to** lists every computer (the one you used last first, the ones it can't reach greyed out), incoming files say which computer they came through, and **Computers** lists them with **Forget**. Pages opened on home Wi-Fi only still work with one computer each.
+- **Pair a phone asks whether Yon is already on the phone.** Choose **Yon is already on this phone** and an animation shows the steps in that icon (open Yon, tap **Add computer**, scan); choose **First time on this phone** for the usual Camera, link and Add to Home Screen. If Reach from anywhere is off, the sheet offers to turn it on. The animation can be paused and stays still when Reduce motion is on.
+
+### Changed
+
+- When a computer paired with Reach from anywhere can't be reached, the phone says to check that Yon is open on it and Reach from anywhere is on, instead of pointing at the Wi-Fi.
+
+### Security
+
+- The phone page may use the camera, and only the phone page (`/phonelink/` on yon.meo.in.th); every other page and the home Wi-Fi page keep it blocked. Scanned text is accepted only as a Yon pairing link for that exact page. On iPhone the QR code is decoded by jsQR 1.4.0 in a separate worker that can't read the stored pairing keys; Android uses the browser's built-in reader. All of a phone's pairings now share one site, so a compromised phone page would reach up to 4 computers instead of one. Details: [threat model](docs/threat-model-phone-computers.md), [ADR-004](docs/adr/ADR-004-phone-qr-decoding.md).
+- Updated a build-time dependency (source-map-js 1.2.2, GHSA-68fv-2mgg-jv7q). It isn't part of the app.
+
+### Known problems
+
+> [!WARNING]
+> **A device that was already open may not show a device that opens later.** Still open from 0.2.4: the new device sees the old one, but the old one's list stays empty until it is restarted (Quit Yon, or End task on Windows, then open it again). Transfers between devices that do see each other are not affected.
+
 ## 0.2.4 — 2026-10-01
 
 ### New

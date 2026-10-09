@@ -25,6 +25,7 @@ Yon (โยน, Thai for "to toss") sends files and folders between your Macs, W
 
 ## Updates
 
+- **2026-10-09:** Yon 0.2.5. One Yon icon on your phone for all your computers (**Add computer** scans the code inside the icon), and Pair a phone shows the steps with an animation. [Changelog](CHANGELOG.md)
 - **2026-10-01:** Yon 0.2.4. Open Yon at login (macOS and Windows, off by default, and it starts without a window so it uses far less memory), Activity that survives a restart, and a second film. [Changelog](CHANGELOG.md)
 - **2026-09-29:** Yon 0.2.3. Send folders, Intel Macs, Windows on ARM, an Activity list, smaller notifications and security fixes. [Changelog](CHANGELOG.md)
 - **2026-09-29:** [yon.meo.in.th](https://yon.meo.in.th/) is live, with a download button and the film.
