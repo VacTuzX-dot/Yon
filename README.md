@@ -167,7 +167,7 @@ The second instance shares the first one's dev server and picks a free port auto
 | Rust | `cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test` |
 | JavaScript tests | `bun run test` |
 
-`bun run test` checks that the phone page's encryption matches the Rust side byte for byte (shared vectors in `web/crypto-vectors.json`). CI also runs `cargo audit` and `bun audit` (known vulnerabilities in dependencies) and checks that Yon compiles for Intel Macs and Windows on ARM.
+`bun run test` checks that the phone page's encryption matches the Rust side byte for byte (shared vectors in `web/crypto-vectors.json`). CI also runs `cargo audit` and `bun audit` (known vulnerabilities in dependencies), checks that Yon compiles for Intel Macs and Windows on ARM, and tests the relay and the website inside the Docker image they ship in: the base image is read from each `Dockerfile`, so a Bun update is tested before it is merged, then the image is built, started with the production hardening and given the same smoke checks as `deploy.sh`.
 
 Two opt-in tests:
 
