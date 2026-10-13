@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { b64url, generateVapidKey, rawPublicKey, subscribeBody, unb64url } from "./push";
+import { b64url, generateVapidKey, rawPublicKey, subscribeBody, unb64url, pad32 } from "./push";
 
 test("b64url: no padding, URL-safe alphabet", () => {
   // 0xfb 0xff encodes to "+/8=" in standard base64, "-_8" in base64url.
@@ -33,6 +33,16 @@ test("rawPublicKey: 65 bytes, 0x04 then x then y", () => {
   expect(pub[0]).toBe(0x04);
   expect(Array.from(pub.subarray(1, 33))).toEqual(Array.from(x));
   expect(Array.from(pub.subarray(33))).toEqual(Array.from(y));
+});
+
+test("pad32 restores leading zero bytes that some WebCrypto exports drop", () => {
+  const full = new Uint8Array(32).fill(7);
+  full[0] = 0;
+  const short = b64url(full.subarray(1)); // 31 bytes, as Bun on Windows exported it
+  expect(unb64url(pad32(short))).toEqual(full);
+  expect(pad32(b64url(full))).toBe(b64url(full));
+  expect(unb64url(pad32(b64url(new Uint8Array(30).fill(9)))).length).toBe(32);
+  expect(() => pad32(b64url(new Uint8Array(33)))).toThrow();
 });
 
 test("rawPublicKey rejects coordinates of the wrong size", () => {
@@ -94,4 +104,12 @@ test("subscribeBody refuses keys of the wrong size or missing keys", async () =>
   expect(() => subscribeBody(ep, ok65, null, key)).toThrow();
   expect(() => subscribeBody(ep, new Uint8Array(64).buffer, ok16, key)).toThrow();
   expect(() => subscribeBody(ep, ok65, new Uint8Array(15).buffer, key)).toThrow();
+});
+
+test("generateVapidKey always returns full-length d, x and y (catches dropped leading zeros)", async () => {
+  // WHY: a short export happens for about 1 key in 256, so one key per run is a flaky check; 600 makes a miss very unlikely.
+  for (let i = 0; i < 600; i++) {
+    const k = await generateVapidKey();
+    expect([unb64url(k.d).length, unb64url(k.x).length, unb64url(k.y).length]).toEqual([32, 32, 32]);
+  }
 });

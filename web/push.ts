@@ -51,11 +51,24 @@ export function rawPublicKey(x: Uint8Array, y: Uint8Array): Uint8Array<ArrayBuff
 }
 
 /** A fresh P-256 key pair from WebCrypto, exported as JWK (d, x, y are already base64url). */
+/** Left-pads a base64url P-256 scalar or coordinate to its full 32 bytes.
+ * WHY: RFC 7518 says JWK d/x/y are full length, but some WebCrypto exports
+ * (seen in Bun on Windows) drop leading zero bytes — about 1 key in 256. The
+ * computer requires exactly 32 bytes, so normalise here. */
+export function pad32(v: string): string {
+  const bytes = unb64url(v);
+  if (bytes.length > 32) throw new Error("P-256 value longer than 32 bytes");
+  if (bytes.length === 32) return v;
+  const out = new Uint8Array(32);
+  out.set(bytes, 32 - bytes.length);
+  return b64url(out);
+}
+
 export async function generateVapidKey(): Promise<VapidKey> {
   const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign"]);
   const jwk = await crypto.subtle.exportKey("jwk", pair.privateKey);
   if (!jwk.d || !jwk.x || !jwk.y) throw new Error("WebCrypto returned no P-256 key");
-  return { d: jwk.d, x: jwk.x, y: jwk.y };
+  return { d: pad32(jwk.d), x: pad32(jwk.x), y: pad32(jwk.y) };
 }
 
 /** The POST /push/subscribe body for one subscription and the key it was made with. */
