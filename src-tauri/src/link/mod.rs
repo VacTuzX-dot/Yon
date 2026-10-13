@@ -13,6 +13,7 @@ pub mod crypto;
 pub mod http;
 pub mod outbox;
 pub mod push;
+pub mod push_send;
 pub mod remote;
 
 use crate::client::{OutFile, SendOutcome, SendStatus};
@@ -24,6 +25,7 @@ use crate::{platform, Throttle};
 use crypto::{Dir, ReplayWindow, SessionKey};
 use http::{read_request, write_response, HttpError, Request};
 use outbox::{read_chunk, Offer, OfferEvents};
+use push_send::{PushChange, PushLimiter, PushSub, Reply};
 use ring::rand::{SecureRandom, SystemRandom};
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -85,6 +87,8 @@ pub struct Phone {
     pub id: [u8; 16],
     pub key: [u8; 32],
     pub name: String,
+    /// Web Push subscription for the phone's page, if it turned push on.
+    pub push: Option<PushSub>,
 }
 
 /// Stable identity for a paired phone, so trust ("Always accept") works the
@@ -100,6 +104,9 @@ pub fn phone_fingerprint(id: &[u8; 16]) -> Fingerprint {
 
 /// Receives the phone id when a session first proves its pairing key.
 pub type OnAuthenticated = Arc<dyn Fn([u8; 16]) + Send + Sync>;
+
+/// A phone's push subscription changed. Store it in settings.
+pub type OnPush = Arc<dyn Fn([u8; 16], PushChange) + Send + Sync>;
 
 pub struct Link {
     receiver: Arc<Receiver>,
@@ -119,6 +126,8 @@ pub struct Link {
     on_presence: RwLock<Option<Arc<dyn Fn() + Send + Sync>>>,
     /// Called once per session when a phone first proves its pairing key.
     on_authenticated: RwLock<Option<OnAuthenticated>>,
+    on_push: RwLock<Option<OnPush>>,
+    push_limit: PushLimiter,
     /// Holds phone → phone files between upload and download.
     relay_root: RwLock<PathBuf>,
 }
@@ -201,6 +210,8 @@ impl Link {
             seen: Mutex::new(HashMap::new()),
             on_presence: RwLock::new(None),
             on_authenticated: RwLock::new(None),
+            on_push: RwLock::new(None),
+            push_limit: PushLimiter::default(),
             relay_root: RwLock::new(std::env::temp_dir().join("yon-relay")),
         })
     }
@@ -263,7 +274,11 @@ impl Link {
         if !self.phones.read().expect("lock").contains_key(&phone) {
             return Err("That phone isn't paired any more".into());
         }
+        let count = files.len();
         let mut offer = Offer::new(id, files, events)?;
+        let sender = from
+            .clone()
+            .unwrap_or_else(|| self.computer_name.read().expect("lock").clone());
         offer.from = from;
         {
             let mut offers = self.offers.lock().expect("lock");
@@ -274,7 +289,72 @@ impl Link {
             offers.insert(phone, offer);
         }
         self.inbox.notify_waiters();
+        self.push_offer(phone, &sender, count);
         Ok(())
+    }
+
+    /// Wake the phone with a Web Push notification, if it has one. Spawned:
+    /// never blocks or fails the offer.
+    fn push_offer(&self, phone: [u8; 16], from: &str, files: usize) {
+        let Some(sub) = self
+            .phones
+            .read()
+            .expect("lock")
+            .get(&phone)
+            .and_then(|p| p.push.clone())
+        else {
+            return;
+        };
+        if !self.push_limit.allow(phone, Instant::now()) {
+            return;
+        }
+        let on_push = self.on_push.read().expect("lock").clone();
+        let payload = push_send::payload(from, files);
+        tauri::async_runtime::spawn(async move {
+            let endpoint = sub.endpoint.clone();
+            let on_gone = move || {
+                if let Some(f) = on_push {
+                    f(phone, PushChange::GoneIf(endpoint));
+                }
+            };
+            let reply = push_send::push_once(
+                &sub,
+                &payload,
+                push_send::now_unix(),
+                push_send::send_https,
+                on_gone,
+            )
+            .await;
+            match reply {
+                Reply::Delivered => {}
+                Reply::Gone => eprintln!("[yon] push: subscription expired, cleared"),
+                Reply::Failed(e) => eprintln!("[yon] push: {e}"),
+            }
+        });
+    }
+
+    /// Called when a phone subscribes to or clears Web Push over its sealed
+    /// session. The in-memory phone changes at once; settings follow.
+    fn set_push(&self, phone: [u8; 16], change: PushChange) {
+        if let Some(p) = self.phones.write().expect("lock").get_mut(&phone) {
+            match &change {
+                PushChange::Set(sub) => p.push = Some(sub.clone()),
+                PushChange::Clear => p.push = None,
+                PushChange::GoneIf(endpoint) => {
+                    if p.push.as_ref().is_some_and(|s| &s.endpoint == endpoint) {
+                        p.push = None;
+                    }
+                }
+            }
+        }
+        let f = self.on_push.read().expect("lock").clone();
+        if let Some(f) = f {
+            f(phone, change);
+        }
+    }
+
+    pub fn set_on_push(&self, f: OnPush) {
+        *self.on_push.write().expect("lock") = Some(f);
     }
 
     /// Cancelled on the desktop; the phone learns at its next request.
@@ -423,7 +503,8 @@ impl Link {
             (
                 "POST",
                 "/request" | "/chunk" | "/status" | "/done" | "/cancel" | "/inbox" | "/pull"
-                | "/peers" | "/offer/accept" | "/offer/decline" | "/offer/done" | "/offer/cancel",
+                | "/peers" | "/offer/accept" | "/offer/decline" | "/offer/done" | "/offer/cancel"
+                | "/push/subscribe" | "/push/unsubscribe",
             ) => match self.sealed(req, ip).await {
                 Some((ctr, body)) => (
                     200,
@@ -569,6 +650,14 @@ impl Link {
                 s = session.lock().await;
                 v
             }
+            "/push/subscribe" => self
+                .on_push_subscribe(phone, &plain)
+                .to_string()
+                .into_bytes(),
+            "/push/unsubscribe" => {
+                self.set_push(phone, PushChange::Clear);
+                json!({ "result": "ok" }).to_string().into_bytes()
+            }
             path => self.on_offer(phone, path, req).to_string().into_bytes(),
         };
         s.out += 1;
@@ -576,6 +665,18 @@ impl Link {
             .key
             .seal(Dir::ComputerToPhone, s.out, &route, &sid, &reply);
         Some((s.out, sealed))
+    }
+
+    /// `/push/subscribe`: body is a `PushSub`. Anything that isn't a valid,
+    /// allowed push subscription is refused and changes nothing.
+    fn on_push_subscribe(&self, phone: [u8; 16], plain: &[u8]) -> Value {
+        match serde_json::from_slice::<PushSub>(plain) {
+            Ok(sub) if push_send::validate(&sub) => {
+                self.set_push(phone, PushChange::Set(sub));
+                json!({ "result": "ok" })
+            }
+            _ => json!({ "result": "invalid" }),
+        }
     }
 
     /// Long-poll: the phone's page asks "anything for me?".
@@ -1176,6 +1277,7 @@ mod tests {
             id: [1; 16],
             key: [2; 32],
             name: "p".into(),
+            push: None,
         };
         let url = anywhere_url(&phone, &"ab".repeat(32), "wss://relay.example.com");
         let (page, fragment) = url.split_once('#').unwrap();
@@ -1190,6 +1292,7 @@ mod tests {
             id: [0xab; 16],
             key: [0xcd; 32],
             name: "p".into(),
+            push: None,
         };
         let url = pairing_url("yon-0123456789abcdef.local", &phone);
         let (before, fragment) = url.split_once('#').unwrap();

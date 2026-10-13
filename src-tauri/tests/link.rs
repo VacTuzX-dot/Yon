@@ -96,6 +96,7 @@ async fn setup_with(tag: &str, mode: Mode, limits: LinkLimits) -> Env {
         id: [0x11; 16],
         key: [0x22; 32],
         name: "Leo's iPhone".into(),
+        push: None,
     };
     link.set_phones(vec![phone.clone()]);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -319,6 +320,7 @@ async fn strangers_replays_and_tampering_get_404() {
         id: [0x99; 16],
         key: [0x22; 32],
         name: "x".into(),
+        push: None,
     };
     let (s, _, _) = http(
         env.addr,
@@ -476,6 +478,7 @@ async fn serve_page_for_browser() {
         id: [0x44; 16],
         key: [0x55; 32],
         name: "Second phone".into(),
+        push: None,
     };
     env.link.set_phones(vec![env.phone.clone(), b.clone()]);
     env.link.set_relay_dir(env.root.join("relay"));
@@ -801,6 +804,7 @@ async fn phones_send_to_each_other_through_the_computer() {
         id: [0x44; 16],
         key: [0x55; 32],
         name: "Ploy's Pixel".into(),
+        push: None,
     };
     env.link.set_phones(vec![env.phone.clone(), b.clone()]);
 
@@ -892,6 +896,7 @@ async fn cancelled_relay_upload_leaves_nothing_behind() {
         id: [0x44; 16],
         key: [0x55; 32],
         name: "B".into(),
+        push: None,
     };
     env.link.set_phones(vec![env.phone.clone(), b.clone()]);
     let mut pa = FakePhone::hello(env.addr, &env.phone).await;
