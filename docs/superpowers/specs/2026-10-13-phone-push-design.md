@@ -1,6 +1,6 @@
 # Phone push notifications: "Leo's MacBook wants to send you 3 files"
 
-**Status:** Draft (2026-10-13), awaiting approval
+**Status:** Draft v2 (2026-10-13), after Atlas review; awaiting approval
 **Builds on:** ADR-001 (Yon Link), ADR-003 (relay), 2026-10-09 phone-many-computers
 **Threat model:** `docs/threat-model-phone-push.md`
 
@@ -63,15 +63,24 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
   - `enablePush(computers)`: called from a tap. Request permission → register
     `sw.js` (scope `./`) → load or create the VAPID key (`ECDSA P-256`,
     extractable, stored as PKCS#8 base64url in `localStorage["yon-push-vapid"]`)
-    → `pushManager.subscribe` (reuse an existing subscription if its
+    → `pushManager.subscribe` with `applicationServerKey` as a `Uint8Array`
+    (WebKit needs a BufferSource) (reuse an existing subscription if its
     `applicationServerKey` matches) → `POST /push/subscribe` to every online
     computer.
   - When a computer is added later (Add computer), and push is enabled, send
     it the same subscription.
+  - **Forget with push on → rotate:** best-effort `POST /push/unsubscribe` to
+    the forgotten computer, then a new VAPID key, a new subscription, and
+    `/push/subscribe` to every remaining computer. The forgotten computer's
+    copy of the old key and endpoint becomes useless.
   - `disablePush()`: `subscription.unsubscribe()`, `POST /push/unsubscribe`
     to every computer, remove the stored key.
 - `web/sw.ts` → `sw.js` (built next to `link.js`, `/phonelink/` only):
-  - `push`: parse `{"t":"offer","from":…,"n":…}`; `showNotification(from,
+  - `install`/`activate`: `skipWaiting()` and `clients.claim()`, so a fixed
+    `sw.js` takes over at once (iOS Home Screen apps otherwise keep a waiting
+    worker).
+  - `push`: if a `/phonelink/` client is visible, don't show a notification
+    (the page already shows the offer); otherwise parse `{"t":"offer","from":…,"n":…}`; `showNotification(from,
     { body: "wants to send you N files", tag: "yon-offer", icon: "icon.png",
     data: { url: "./" } })`. Bad payload → generic "Yon: files are waiting".
   - `notificationclick`: close; focus an existing `/phonelink/` client, else
@@ -101,7 +110,7 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
 
 - `endpoint`: ≤ 1024 bytes, parses as a URL, scheme `https`, no userinfo,
   default port only, host in the allowlist:
-  `web.push.apple.com`, `fcm.googleapis.com`,
+  `*.push.apple.com` (Apple uses several gateways), `fcm.googleapis.com`,
   `updates.push.services.mozilla.com`, and `*.notify.windows.com`.
   Anything else is refused (SSRF: otherwise a phone could make the computer
   POST to an address on its LAN or anywhere).
@@ -120,8 +129,9 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
 ### Sending (`link/push.rs`, new)
 
 - Trigger: `Link::add_offer` (computer → phone and phone → phone relays),
-  after the offer is stored, if that phone has `push` and is **not online**
-  (no request in the last `online_for`, 35 s): its page is closed or asleep.
+  after the offer is stored, if that phone has `push`. Always sent: an
+  "online" check (`seen` within 35 s) would skip phones locked moments ago;
+  the service worker hides the notification when the page is visible.
   Spawned, never blocks or fails the offer; errors are logged
   (`[yon] push: <status>` without the endpoint URL).
 - Payload: `{"t":"offer","from":<name>,"n":<file count>}`, ≤ 3 KB.
@@ -129,7 +139,8 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
   HKDF with `auth`, 16-byte random salt, record size 4096, single record,
   padding delimiter `0x02`).
 - VAPID: RFC 8292 JWT `{"aud": <endpoint origin>, "exp": now+12h,
-  "sub": "https://yon.meo.in.th"}`, ES256 with the phone's key;
+  "sub": "mailto:<project contact>"}` (Apple rejects a JWT without a usable
+  `sub`; `mailto:` is the form every push service accepts`, ES256 with the phone's key;
   header `Authorization: vapid t=<jwt>, k=<public key b64url>`.
 - Request headers: `TTL: 600` (the offer lives 10 min), `Urgency: high`,
   `Topic: yon-offer` (a newer offer replaces an undelivered one),
@@ -161,11 +172,20 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
 
 ## Open questions
 
-1. `web.push.apple.com` and `fcm.googleapis.com` accept an HTTP/1.1 POST
-   (the common web-push libraries use HTTP/1.1); confirm in the first device
-   test. If one needs HTTP/2, that's a new dependency decision (Hard Stop).
+1. ~~HTTP/1.1 acceptance~~ — checked 2026-10-13: an HTTP/1.1 POST to
+   `https://web.push.apple.com/` returns `403 {"reason":"BadAuthorizationHeader"}`
+   (a Web Push error, so HTTP/1.1 is accepted); `fcm.googleapis.com` answers
+   HTTP/1.1 too. No `h2` needed.
 2. iOS: do icons added before the manifest existed get push, or must they be
    re-added to the Home Screen?
+
+## Rejected
+
+| Option | Why |
+|---|---|
+| Relay sends the pushes (Atlas review) | The relay would store subscriptions and a VAPID key and learn when offers happen — against ADR-003 ("keeps nothing"); new server state and a dependency there |
+| Each computer its own VAPID key | One subscription per service worker, bound to one key: only one computer could push |
+| Push only when the phone is "offline" | `seen` lasts 35 s, so a phone locked moments ago would get nothing; the SW hides it when visible instead |
 
 ## Out of scope
 

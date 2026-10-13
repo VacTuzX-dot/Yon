@@ -48,6 +48,9 @@ Builds on the Yon Link, relay and phone-computers threat models.
 | Service worker keeps stale code after a fix | T | Low | Med | No caching in the SW; the browser re-checks `sw.js` on navigation; `sw.js` served `Cache-Control: no-cache` |
 | VAPID key reused across phones | I | — | — | Generated per phone on the phone; never leaves except to that phone's own computers |
 | Replay of `/push/subscribe` | T | — | — | Existing sealed-session replay window |
+| One paired computer sends a notification claiming to be another (`from` is free text, all computers share the phone's key) | S | Low | Low | The notification only opens Yon; offers there are authenticated per computer by the sealed session. Documented |
+| A buggy or compromised computer floods the push service, which throttles or drops the phone's subscription | D | Low | Low | One push per phone per 30 s per computer; 404/410 handled; the phone can re-enable push |
+| A forgotten computer keeps pushing with the old key | E | Med | Low | Forget rotates the phone's VAPID key and subscription; the old endpoint is gone (404/410) |
 
 ### Residual risks
 
@@ -65,3 +68,5 @@ Builds on the Yon Link, relay and phone-computers threat models.
 - [ ] `sw.js` served with `Cache-Control: no-cache`.
 - [ ] Payload contains no file names (test).
 - [ ] 404/410 clears the stored subscription.
+- [ ] Forget rotates the VAPID key and subscription (test on the web side).
+- [ ] `sw.js` calls `skipWaiting()` and `clients.claim()`; no notification while a visible client exists.
