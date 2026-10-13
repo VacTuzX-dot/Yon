@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <!-- Phone page Home Screen icon: src-tauri/app-icon.svg's square at full bleed, opaque, no rounded corners.
+       iOS and Android mask the corners themselves; transparency turns black on iOS. Motion lines use the pre-blended colour (#1E222B at 45% on #E8A317) because ImageMagick ignores opacity.
+       Regenerate: magick -background none -density 384 phone-icon.svg -resize NxN -alpha off icon-N.png (N = 180, 192, 512) -->
+  <rect width="1024" height="1024" fill="#E8A317"/>
+  <g transform="scale(1.24272) translate(-100 -100)">
+    <g transform="translate(100 100) scale(6.3385) translate(-195 -30)">
+      <path d="M206 114 L222 110" fill="none" stroke="#8D6920" stroke-width="5" stroke-linecap="round"/>
+      <path d="M210 128 L226 124" fill="none" stroke="#8D6920" stroke-width="5" stroke-linecap="round"/>
+      <g transform="rotate(-18 262 97)">
+        <path d="M246 66 H274 L288 80 V122 Q288 128 282 128 H246 Q240 128 240 122 V72 Q240 66 246 66 Z" fill="#1E222B"/>
+        <path d="M274 66 V80 H288 Z" fill="#4A5060"/>
+      </g>
+    </g>
+  </g>
+</svg>

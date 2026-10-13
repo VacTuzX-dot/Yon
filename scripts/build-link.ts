@@ -43,8 +43,11 @@ const csp =
 const html = (await Bun.file("web/link.html").text())
   .replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="robots" content="noindex" />`)
   .replace('<script src="link.js" defer></script>', `<script src="link.js" integrity="${sri}" defer></script>`)
-  .replace('<link rel="stylesheet" href="link.css" />', `<link rel="manifest" href="manifest.webmanifest" />\n    <link rel="stylesheet" href="link.css" />`);
-if (!html.includes(sri) || !html.includes("Content-Security-Policy") || !html.includes("noindex") || !html.includes("manifest.webmanifest")) {
+  .replace('<link rel="stylesheet" href="link.css" />', `<link rel="manifest" href="manifest.webmanifest" />\n    <link rel="stylesheet" href="link.css" />`)
+  // WHY: iOS wants an opaque, full-bleed 180x180 icon and rounds it itself; the
+  // desktop icon's transparent margin left the Home Screen icon wrong (web/icons/phone-icon.svg).
+  .replace('<link rel="apple-touch-icon" href="icon.png" />', '<link rel="apple-touch-icon" href="apple-touch-icon.png" />');
+if (!html.includes(sri) || !html.includes("Content-Security-Policy") || !html.includes("noindex") || !html.includes("manifest.webmanifest") || !html.includes("apple-touch-icon.png")) {
   throw new Error("site page not patched");
 }
 const icon = Bun.file("src-tauri/icons/128x128@2x.png");
@@ -52,7 +55,9 @@ await Bun.write(`${phone}/index.html`, html);
 await Bun.write(`${phone}/link.js`, js);
 await Bun.write(`${phone}/link.css`, Bun.file("web/link.css"));
 await Bun.write(`${phone}/icon.png`, icon);
-// Home Screen app (display: standalone) and the push icon. The icon is 256x256 (src-tauri/icons/128x128@2x.png).
+for (const f of ["icon-192.png", "icon-512.png"]) await Bun.write(`${phone}/${f}`, Bun.file(`web/icons/${f}`));
+await Bun.write(`${phone}/apple-touch-icon.png`, Bun.file("web/icons/icon-180.png"));
+// Home Screen app (display: standalone) and the push icon. Opaque full-bleed icons from web/icons/phone-icon.svg.
 await Bun.write(
   `${phone}/manifest.webmanifest`,
   JSON.stringify({
@@ -63,7 +68,10 @@ await Bun.write(
     display: "standalone",
     background_color: "#181b21",
     theme_color: "#181b21",
-    icons: [{ src: "icon.png", sizes: "256x256", type: "image/png" }],
+    icons: [
+      { src: "icon-192.png", sizes: "192x192", type: "image/png" },
+      { src: "icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
   }) + "\n",
 );
 // The QR decoder for "Add computer" (ADR-004), a dedicated Worker loaded by
