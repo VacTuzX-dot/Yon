@@ -247,6 +247,31 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
+/* The per-computer auto-receive switch: offer card and computers list. */
+#auto-box,
+.files .auto {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+#auto-box {
+  align-self: center;
+}
+
+.files .auto {
+  margin-top: 0.35rem;
+}
+
+input[type="checkbox"] {
+  accent-color: var(--accent);
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0;
+}
+
 .files .forget {
   flex: none;
   padding: 0.4rem 0.9rem;

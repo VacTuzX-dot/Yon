@@ -5,7 +5,16 @@
 // Every text shown here goes through textContent, never innerHTML.
 import { bytesToHex, hexToBytes, utf8ToBytes } from "@noble/hashes/utils.js";
 import { COMPUTER_TO_PHONE, PHONE_TO_COMPUTER, ReplayWindow, deriveKey, open, seal } from "./crypto";
-import { MAX_COMPUTERS, addComputer, forgetComputer, loadComputers, parseScanned, type Pairing } from "./keyring";
+import {
+  MAX_COMPUTERS,
+  addComputer,
+  forgetComputer,
+  isAutoReceive,
+  loadComputers,
+  parseScanned,
+  setAutoReceive,
+  type Pairing,
+} from "./keyring";
 import { canScan, scanQr } from "./scan";
 import { RelayTransport, direct, relayWsUrl, type Transport } from "./transport";
 import { isIOS, kindOf, sender } from "./receive";
@@ -140,6 +149,9 @@ const ui = {
   saveHint: el("save-hint"),
   savePhotos: el<HTMLButtonElement>("save-photos"),
   saveFiles: el<HTMLButtonElement>("save-files"),
+  autoBox: el("auto-box"),
+  autoName: el("auto-name"),
+  autoReceive: el<HTMLInputElement>("auto-receive"),
   input: el<HTMLInputElement>("files"),
   actions: el("actions"),
   addComputer: el<HTMLButtonElement>("add-computer"),
@@ -422,7 +434,11 @@ async function listen(c: Computer) {
       c.state = "online";
       // WHY: another computer may have shown an offer in the same poll window; a
       // skipped offer is not lost: /inbox returns it again on the next poll.
-      if (r.offer && isOffer(r.offer) && !current && !receiving && ui.incoming.hidden) showOffer(c, r.offer);
+      if (r.offer && isOffer(r.offer) && !current && !receiving && ui.incoming.hidden) {
+        // WHY: only the computer's own offers can be auto-received; a phone relayed through it always asks.
+        if (r.offer.from === c.name && isAutoReceive(storage(), c.pairing.id)) void receive(c, r.offer, true);
+        else showOffer(c, r.offer);
+      }
     } catch (e) {
       c.listener = null;
       if (e instanceof Gone) {
@@ -455,7 +471,16 @@ function showOffer(c: Computer, o: Offer) {
   ui.offerText.textContent = `${o.from} wants to send you ${n} (${formatBytes(o.total)})${via}.`;
   ui.offerFiles.replaceChildren(...o.files.slice(0, 5).map((f) => fileRow(f.name, f.size)));
   if (o.files.length > 5) ui.offerFiles.append(fileRow(`and ${o.files.length - 5} more`, o.total));
-  ui.receive.onclick = () => void receive(c, o);
+  // Only the computer's own offers can be made automatic (see listen).
+  const own = o.from === c.name && storage() !== null;
+  ui.autoBox.hidden = !own;
+  ui.autoName.textContent = nameOf(c);
+  ui.autoReceive.checked = false;
+  ui.receive.onclick = () => {
+    // WHY: the choice is saved only when the offer is accepted, never on Decline.
+    if (own && ui.autoReceive.checked) setAutoReceive(storage(), c.pairing.id, true);
+    void receive(c, o);
+  };
   ui.decline.onclick = () => {
     void withListener(c, (s) => s.call(`/offer/decline?o=${o.id}`)).catch(() => {});
     pickAgain();
@@ -498,12 +523,12 @@ async function pull(c: Computer, o: Offer, f: number, i: number): Promise<Uint8A
   return data;
 }
 
-async function receive(c: Computer, o: Offer) {
+async function receive(c: Computer, o: Offer, auto = false) {
   const job = { cancelled: false };
   receiving = job;
   const s = sender(o.from, c.name);
   resetSaved();
-  ui.status.textContent = `Receiving from ${s}`;
+  ui.status.textContent = `Receiving from ${s}${auto ? " (automatic)" : ""}`;
   ui.detail.textContent = "";
   ui.fill.style.width = "0%";
   ui.cancel.hidden = false;
@@ -738,7 +763,21 @@ function openComputers() {
       const state = document.createElement("span");
       state.className = "state";
       state.textContent = stateText(c);
-      info.append(name, state);
+      // WHY: a per-computer switch; without storage the choice cannot stick, so it is hidden.
+      const auto = document.createElement("label");
+      auto.className = "auto";
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = isAutoReceive(storage(), c.pairing.id);
+      const text = document.createElement("span");
+      text.textContent = "Receive automatically";
+      box.onchange = () => {
+        setAutoReceive(storage(), c.pairing.id, box.checked);
+        box.checked = isAutoReceive(storage(), c.pairing.id); // show what was actually saved
+      };
+      auto.append(box, text);
+      auto.hidden = storage() === null;
+      info.append(name, state, auto);
       const forget = document.createElement("button");
       forget.type = "button";
       forget.className = "forget";

@@ -1,14 +1,18 @@
 import { expect, test } from "bun:test";
 import {
+  AUTO_KEY,
   COMPUTERS_KEY,
   FORGOTTEN_KEY,
   LEGACY_KEY,
+  MAX_COMPUTERS,
   MAX_FORGOTTEN,
   addComputer,
   forgetComputer,
+  isAutoReceive,
   loadComputers,
   parsePairing,
   parseScanned,
+  setAutoReceive,
   type KeyStore,
   type Pairing,
 } from "./keyring";
@@ -231,6 +235,65 @@ test("forgetComputer caps forgotten at 32, dropping the oldest", () => {
 test("forgetComputer never throws", () => {
   expect(() => forgetComputer(null, id("1"))).not.toThrow();
   expect(() => forgetComputer(throwing, id("1"))).not.toThrow();
+});
+
+test("setAutoReceive turns automatic receive on and off per computer", () => {
+  const { store, data } = fakeStore();
+  expect(isAutoReceive(store, id("1"))).toBe(false);
+  setAutoReceive(store, id("1"), true);
+  setAutoReceive(store, id("2"), true);
+  expect(isAutoReceive(store, id("1"))).toBe(true);
+  expect(isAutoReceive(store, id("2"))).toBe(true);
+  setAutoReceive(store, id("1"), false);
+  expect(isAutoReceive(store, id("1"))).toBe(false);
+  expect(isAutoReceive(store, id("2"))).toBe(true);
+  expect(JSON.parse(data.get(AUTO_KEY)!)).toEqual([id("2")]);
+});
+
+test("setAutoReceive dedupes an id turned on twice", () => {
+  const { store, data } = fakeStore();
+  setAutoReceive(store, id("1"), true);
+  setAutoReceive(store, id("1"), true);
+  expect(JSON.parse(data.get(AUTO_KEY)!)).toEqual([id("1")]);
+});
+
+test("setAutoReceive does not add past MAX_COMPUTERS", () => {
+  const { store, data } = fakeStore();
+  for (let i = 0; i < MAX_COMPUTERS + 1; i++) setAutoReceive(store, id(String(i)), true);
+  expect(JSON.parse(data.get(AUTO_KEY)!).length).toBe(MAX_COMPUTERS);
+  expect(isAutoReceive(store, id(String(MAX_COMPUTERS)))).toBe(false);
+});
+
+test("isAutoReceive ignores invalid JSON, non-array values and invalid ids", () => {
+  expect(isAutoReceive(fakeStore({ [AUTO_KEY]: "{oops" }).store, id("1"))).toBe(false);
+  expect(isAutoReceive(fakeStore({ [AUTO_KEY]: JSON.stringify({ a: 1 }) }).store, id("1"))).toBe(false);
+  const { store } = fakeStore({ [AUTO_KEY]: JSON.stringify(["NOT-HEX", 7, id("a").toUpperCase(), id("2")]) });
+  expect(isAutoReceive(store, id("a"))).toBe(false);
+  expect(isAutoReceive(store, id("2"))).toBe(true);
+});
+
+test("setAutoReceive replaces corrupt stored data with a clean list", () => {
+  const { store, data } = fakeStore({ [AUTO_KEY]: "{oops" });
+  setAutoReceive(store, id("1"), true);
+  expect(JSON.parse(data.get(AUTO_KEY)!)).toEqual([id("1")]);
+});
+
+test("auto receive: null or throwing storage reads false and never throws", () => {
+  expect(isAutoReceive(null, id("1"))).toBe(false);
+  expect(isAutoReceive(throwing, id("1"))).toBe(false);
+  expect(() => setAutoReceive(null, id("1"), true)).not.toThrow();
+  expect(() => setAutoReceive(throwing, id("1"), true)).not.toThrow();
+  expect(() => setAutoReceive(throwing, id("1"), false)).not.toThrow();
+});
+
+test("forgetComputer clears automatic receive for that computer", () => {
+  const { store, data } = fakeStore({ [COMPUTERS_KEY]: JSON.stringify([relay("1"), relay("2")]) });
+  setAutoReceive(store, id("1"), true);
+  setAutoReceive(store, id("2"), true);
+  forgetComputer(store, id("1"));
+  expect(isAutoReceive(store, id("1"))).toBe(false);
+  expect(isAutoReceive(store, id("2"))).toBe(true);
+  expect(JSON.parse(data.get(AUTO_KEY)!)).toEqual([id("2")]);
 });
 
 test("parseScanned accepts a relay pairing for this page", () => {

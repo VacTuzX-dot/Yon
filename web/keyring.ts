@@ -15,6 +15,8 @@ export const MAX_FORGOTTEN = 32;
 export const COMPUTERS_KEY = "yon-link-computers";
 export const FORGOTTEN_KEY = "yon-link-forgotten";
 export const LEGACY_KEY = "yon-link-pairing";
+// Pair ids whose computer may send files without asking (per-computer auto-receive).
+export const AUTO_KEY = "yon-link-auto";
 
 const PAIRING = /^([0-9a-f]{32})\.([0-9a-f]{64})(?:\.([0-9a-f]{64})@([a-z0-9.-]+(?::\d{1,5})?))?$/;
 const HEX32 = /^[0-9a-f]{32}$/;
@@ -71,6 +73,54 @@ function writeForgotten(storage: KeyStore, list: string[]): void {
   // WHY: keep the newest entries; the oldest forgotten ids are the ones least
   // likely to still be baked into an old Home Screen icon.
   storage.setItem(FORGOTTEN_KEY, JSON.stringify(list.slice(-MAX_FORGOTTEN)));
+}
+
+// WHY: same tolerance as readForgotten; a bad or missing value means "nothing automatic".
+function readAuto(storage: KeyStore): string[] {
+  const raw = storage.getItem(AUTO_KEY);
+  if (raw === null) return [];
+  let list: unknown;
+  try {
+    list = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(list)) return [];
+  const out: string[] = [];
+  for (const x of list) {
+    if (typeof x === "string" && HEX32.test(x) && !out.includes(x) && out.length < MAX_COMPUTERS) out.push(x);
+  }
+  return out;
+}
+
+function writeAuto(storage: KeyStore, list: string[]): void {
+  storage.setItem(AUTO_KEY, JSON.stringify(list));
+}
+
+/** Does this computer's offer get received without asking? Never throws. */
+export function isAutoReceive(storage: KeyStore | null, id: string): boolean {
+  if (!storage) return false;
+  try {
+    return readAuto(storage).includes(id);
+  } catch {
+    return false;
+  }
+}
+
+/** Turn automatic receive on or off for one computer. Never throws. */
+export function setAutoReceive(storage: KeyStore | null, id: string, on: boolean): void {
+  if (!storage) return;
+  try {
+    const list = readAuto(storage).filter((x) => x !== id);
+    // WHY: same cap as the keyring; a full list ignores "on" rather than dropping another computer.
+    if (on) {
+      if (list.length >= MAX_COMPUTERS) return;
+      list.push(id);
+    }
+    writeAuto(storage, list);
+  } catch {
+    // WHY: best effort; with storage blocked the toggle simply does not stick.
+  }
 }
 
 function canAdd(list: Pairing[], p: Pairing, forgotten: string[]): boolean {
@@ -177,6 +227,12 @@ export function forgetComputer(storage: KeyStore | null, id: string): void {
     writeForgotten(storage, forgotten);
   } catch {
     // WHY: best effort; if storage is blocked there is nothing stored to forget.
+  }
+  try {
+    // WHY: a forgotten computer must not keep automatic receive if it is paired again later.
+    setAutoReceive(storage, id, false);
+  } catch {
+    // WHY: setAutoReceive never throws; this guard only keeps the contract explicit.
   }
 }
 
