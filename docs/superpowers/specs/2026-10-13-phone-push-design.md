@@ -62,7 +62,7 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
     and (iOS) running as a Home Screen app (`display-mode: standalone`).
   - `enablePush(computers)`: called from a tap. Request permission → register
     `sw.js` (scope `./`) → load or create the VAPID key (`ECDSA P-256`,
-    extractable, stored as PKCS#8 base64url in `localStorage["yon-push-vapid"]`)
+    extractable, stored as JWK `d`/`x`/`y` base64url in `localStorage["yon-push"]`; the computer gets `vapid_d` + `vapid_pub`)
     → `pushManager.subscribe` with `applicationServerKey` as a `Uint8Array`
     (WebKit needs a BufferSource) (reuse an existing subscription if its
     `applicationServerKey` matches) → `POST /push/subscribe` to every online
@@ -79,8 +79,10 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
   - `install`/`activate`: `skipWaiting()` and `clients.claim()`, so a fixed
     `sw.js` takes over at once (iOS Home Screen apps otherwise keep a waiting
     worker).
-  - `push`: if a `/phonelink/` client is visible, don't show a notification
-    (the page already shows the offer); otherwise parse `{"t":"offer","from":…,"n":…}`; `showNotification(from,
+  - `push`: always show a notification (`userVisibleOnly: true` requires it:
+    Chrome otherwise shows a generic one and Safari revokes the subscription
+    after a few silent pushes); when a `/phonelink/` client is visible, show it
+    with `silent: true`. Parse `{"t":"offer","from":…,"n":…}`; `showNotification(from,
     { body: "wants to send you N files", tag: "yon-offer", icon: "icon.png",
     data: { url: "./" } })`. Bad payload → generic "Yon: files are waiting".
   - `notificationclick`: close; focus an existing `/phonelink/` client, else
@@ -131,7 +133,7 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
 - Trigger: `Link::add_offer` (computer → phone and phone → phone relays),
   after the offer is stored, if that phone has `push`. Always sent: an
   "online" check (`seen` within 35 s) would skip phones locked moments ago;
-  the service worker hides the notification when the page is visible.
+  the service worker shows it silently when the page is visible.
   Spawned, never blocks or fails the offer; errors are logged
   (`[yon] push: <status>` without the endpoint URL).
 - Payload: `{"t":"offer","from":<name>,"n":<file count>}`, ≤ 3 KB.
@@ -185,7 +187,7 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
 |---|---|
 | Relay sends the pushes (Atlas review) | The relay would store subscriptions and a VAPID key and learn when offers happen — against ADR-003 ("keeps nothing"); new server state and a dependency there |
 | Each computer its own VAPID key | One subscription per service worker, bound to one key: only one computer could push |
-| Push only when the phone is "offline" | `seen` lasts 35 s, so a phone locked moments ago would get nothing; the SW hides it when visible instead |
+| Push only when the phone is "offline" | `seen` lasts 35 s, so a phone locked moments ago would get nothing; the SW shows it silently when visible instead (never hidden: userVisibleOnly) |
 
 ## Out of scope
 

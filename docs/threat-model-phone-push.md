@@ -69,4 +69,4 @@ Builds on the Yon Link, relay and phone-computers threat models.
 - [ ] Payload contains no file names (test).
 - [ ] 404/410 clears the stored subscription.
 - [ ] Forget rotates the VAPID key and subscription (test on the web side).
-- [ ] `sw.js` calls `skipWaiting()` and `clients.claim()`; no notification while a visible client exists.
+- [ ] `sw.js` calls `skipWaiting()` and `clients.claim()`; every push shows a notification (silent while a client is visible).
