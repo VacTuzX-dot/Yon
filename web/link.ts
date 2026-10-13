@@ -8,6 +8,7 @@ import { COMPUTER_TO_PHONE, PHONE_TO_COMPUTER, ReplayWindow, deriveKey, open, se
 import { MAX_COMPUTERS, addComputer, forgetComputer, loadComputers, parseScanned, type Pairing } from "./keyring";
 import { canScan, scanQr } from "./scan";
 import { RelayTransport, direct, relayWsUrl, type Transport } from "./transport";
+import { isIOS, kindOf, sender } from "./receive";
 
 type Reply = { result: string; reason?: string; file?: number; next?: number; chunk?: number };
 type Offer = {
@@ -134,8 +135,11 @@ const ui = {
   offerFiles: el("offer-files"),
   receive: el<HTMLButtonElement>("receive"),
   decline: el<HTMLButtonElement>("decline"),
+  savedFrom: el("saved-from"),
   saved: el("saved"),
   saveHint: el("save-hint"),
+  savePhotos: el<HTMLButtonElement>("save-photos"),
+  saveFiles: el<HTMLButtonElement>("save-files"),
   input: el<HTMLInputElement>("files"),
   actions: el("actions"),
   addComputer: el<HTMLButtonElement>("add-computer"),
@@ -159,8 +163,14 @@ function show(section: HTMLElement) {
   ui.actions.hidden = section === ui.busy || section === ui.incoming;
 }
 
+/** Hide what the end screen shows for saved files, so a new transfer starts clean. */
+function resetSaved() {
+  ui.savedFrom.hidden = ui.saved.hidden = ui.saveHint.hidden = true;
+  ui.savePhotos.hidden = ui.saveFiles.hidden = true;
+}
+
 function finish(text: string, tone: "ok" | "bad", button: string, action: () => void) {
-  ui.saved.hidden = ui.saveHint.hidden = true;
+  resetSaved();
   ui.result.textContent = text;
   ui.result.className = tone;
   ui.again.textContent = button;
@@ -335,6 +345,7 @@ function stopped(r: Reply, c: Computer) {
 }
 
 function pickAgain() {
+  resetSaved();
   show(ui.pick);
 }
 
@@ -346,6 +357,9 @@ const canAddComputer = () => location.protocol === "https:" && storage() !== nul
 const standalone =
   matchMedia("(display-mode: standalone)").matches ||
   (navigator as Navigator & { standalone?: boolean }).standalone === true;
+// WHY: iOS never auto-downloads (its Downloads folder is not reachable from the
+// page); there the user saves through the share sheet instead.
+const ios = isIOS(navigator.userAgent, navigator.platform, navigator.maxTouchPoints);
 /** Parallel chunk requests: fills the Wi-Fi without much memory (spike: 1 → ~3× faster). */
 const PULLS = 3;
 let receiving: { cancelled: boolean } | null = null;
@@ -436,8 +450,8 @@ function fileRow(name: string, size: number): HTMLLIElement {
 
 function showOffer(c: Computer, o: Offer) {
   const n = o.files.length === 1 ? "a file" : `${o.files.length} files`;
-  // WHY: with several computers, say which one the offer came through.
-  const via = computers.length > 1 ? ` via ${c.name}` : "";
+  // WHY: name the computer only when a phone sent the offer through it.
+  const via = o.from !== c.name ? ` via ${c.name}` : "";
   ui.offerText.textContent = `${o.from} wants to send you ${n} (${formatBytes(o.total)})${via}.`;
   ui.offerFiles.replaceChildren(...o.files.slice(0, 5).map((f) => fileRow(f.name, f.size)));
   if (o.files.length > 5) ui.offerFiles.append(fileRow(`and ${o.files.length - 5} more`, o.total));
@@ -487,7 +501,9 @@ async function pull(c: Computer, o: Offer, f: number, i: number): Promise<Uint8A
 async function receive(c: Computer, o: Offer) {
   const job = { cancelled: false };
   receiving = job;
-  ui.status.textContent = `Receiving from ${o.from}`;
+  const s = sender(o.from, c.name);
+  resetSaved();
+  ui.status.textContent = `Receiving from ${s}`;
   ui.detail.textContent = "";
   ui.fill.style.width = "0%";
   ui.cancel.hidden = false;
@@ -522,13 +538,13 @@ async function receive(c: Computer, o: Offer) {
       if (job.cancelled) return;
       const blob = new Blob(parts, { type: typeFor(file.name) });
       received.push({ name: file.name, blob });
-      if (!standalone) save(file.name, blob);
+      if (!ios) save(file.name, blob);
     }
     const end = await withListener(c, (s) => s.call(`/offer/done?o=${o.id}`));
     if (end.result !== "completed") throw new Stop(end.result);
     const n = received.length === 1 ? "1 file" : `${received.length} files`;
-    finish(`Received ${n} from ${o.from}.`, "ok", "Done", pickAgain);
-    showSaved(received);
+    finish(`Received ${n} from ${s}.`, "ok", "Done", pickAgain);
+    showSaved(s, received);
   } catch (e) {
     if (job.cancelled) return;
     const why =
@@ -538,7 +554,7 @@ async function receive(c: Computer, o: Offer) {
           ? `${o.from} withdrew the files.`
           : `Couldn't receive the files from ${o.from}. Try again from the computer.`;
     finish(why, "bad", "Done", pickAgain);
-    if (received.length > 0) showSaved(received);
+    if (received.length > 0) showSaved(s, received);
   } finally {
     if (receiving === job) receiving = null;
     ui.cancel.onclick = null; // the send flow has its own listener
@@ -547,7 +563,7 @@ async function receive(c: Computer, o: Offer) {
 
 /** Saved files stay listed so they can be saved again (Home Screen mode
  * opens one file at a time). */
-function showSaved(files: { name: string; blob: Blob }[]) {
+function showSaved(s: string, files: Saved[]) {
   ui.saved.replaceChildren(
     ...files.map(({ name, blob }) => {
       const li = fileRow(name, blob.size);
@@ -559,8 +575,42 @@ function showSaved(files: { name: string; blob: Blob }[]) {
       return li;
     }),
   );
-  ui.saved.hidden = false;
-  ui.saveHint.hidden = !standalone;
+  ui.savedFrom.textContent = `From ${s}`;
+  ui.savedFrom.hidden = ui.saved.hidden = false;
+  ui.saveHint.hidden = !ios;
+  if (ios) {
+    ui.saveHint.textContent = "Tip: “Save to Photos” puts photos and videos in your Photos library.";
+    showShareButtons(files);
+  }
+}
+
+type Saved = { name: string; blob: Blob };
+
+/** Received files as File objects, for the share sheet. */
+const asFiles = (list: Saved[]) =>
+  list.map(({ name, blob }) => new File([blob], name, { type: blob.type || typeFor(name) }));
+
+/** iOS: "Save to Photos" (photos and videos) and "Save to Files" (the rest), each only when the share sheet accepts it. */
+function showShareButtons(files: Saved[]) {
+  const photos = files.filter((f) => kindOf(f.name, f.blob.type) !== "other");
+  const others = files.filter((f) => kindOf(f.name, f.blob.type) === "other");
+  const offer = (button: HTMLButtonElement, group: Saved[]) => {
+    button.hidden = group.length === 0 || !navigator.canShare?.({ files: asFiles(group) });
+    button.onclick = () => void shareGroup(group);
+  };
+  offer(ui.savePhotos, photos);
+  offer(ui.saveFiles, others);
+}
+
+async function shareGroup(group: Saved[]) {
+  // WHY: no await before share(): iOS only opens the sheet inside the tap.
+  try {
+    await navigator.share({ files: asFiles(group) });
+  } catch (e) {
+    if ((e as { name?: string } | null)?.name === "AbortError") return; // closed the sheet
+    ui.saveHint.textContent = "Couldn't open the share sheet. Save the files one by one below.";
+    ui.saveHint.hidden = false;
+  }
 }
 
 ui.input.addEventListener("change", () => {
