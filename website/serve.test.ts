@@ -34,6 +34,8 @@ beforeAll(() => {
   writeFileSync(join(dir, "phonelink", "index.html"), "<!doctype html><title>Yon Link</title>");
   writeFileSync(join(dir, "phonelink", "link.js"), "void 1;");
   writeFileSync(join(dir, "phonelink", "link.css"), "p{}");
+  writeFileSync(join(dir, "phonelink", "sw.js"), "self.skipWaiting();");
+  writeFileSync(join(dir, "phonelink", "manifest.webmanifest"), '{"name":"Yon"}');
   server = startSite(0, dir);
   base = `http://127.0.0.1:${server.port}`;
 });
@@ -259,4 +261,21 @@ test("/pwsh and /mac serve the installers as plain text, same as their long path
     expect(short.headers.get("content-security-policy")).toBe(CSP_SITE);
     expect(await short.text()).toBe(await long.text());
   }
+});
+
+test("sw.js is served as JavaScript and never cached", async () => {
+  const res = await fetch(`${base}/phonelink/sw.js`);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("text/javascript; charset=utf-8");
+  // WHY: a stale worker keeps old push code; the browser must revalidate it on every check.
+  expect(res.headers.get("cache-control")).toBe("no-cache");
+  expect(res.headers.get("content-security-policy")).toBe(CSP_PHONE);
+});
+
+test("the manifest is served as application/manifest+json", async () => {
+  const res = await fetch(`${base}/phonelink/manifest.webmanifest`);
+  expect(res.status).toBe(200);
+  expect(res.headers.get("content-type")).toBe("application/manifest+json");
+  expect(res.headers.get("cache-control")).toBe("no-cache");
+  expect(await res.text()).toBe('{"name":"Yon"}');
 });

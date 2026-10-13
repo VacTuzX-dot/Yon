@@ -249,6 +249,7 @@ button:focus-visible {
 
 /* The per-computer auto-receive switch: offer card and computers list. */
 #auto-box,
+#push-label,
 .files .auto {
   display: flex;
   align-items: center;
@@ -257,7 +258,8 @@ button:focus-visible {
   font-size: 0.9rem;
 }
 
-#auto-box {
+#auto-box,
+#push-label {
   align-self: center;
 }
 
