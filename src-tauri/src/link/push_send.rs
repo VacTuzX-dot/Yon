@@ -15,11 +15,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpStream;
 
-/// Contact in the VAPID `sub` claim; push services want a usable one.
-// TODO(Leo): confirm the contact address
+/// Contact in the VAPID `sub` claim (RFC 8292 allows an https URL): the
+/// project page, so no email address is published. A build may override it.
 pub const SUBJECT: &str = match option_env!("YON_PUSH_CONTACT") {
     Some(s) => s,
-    None => "mailto:yon@meo.in.th",
+    None => "https://yon.meo.in.th",
 };
 const MAX_ENDPOINT: usize = 1024;
 const JWT_LIFETIME_SECS: u64 = 12 * 60 * 60;

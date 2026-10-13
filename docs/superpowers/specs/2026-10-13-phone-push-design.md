@@ -141,8 +141,8 @@ tap → notificationclick → focus/open /phonelink/ → /inbox shows the offer
   HKDF with `auth`, 16-byte random salt, record size 4096, single record,
   padding delimiter `0x02`).
 - VAPID: RFC 8292 JWT `{"aud": <endpoint origin>, "exp": now+12h,
-  "sub": "mailto:<project contact>"}` (Apple rejects a JWT without a usable
-  `sub`; `mailto:` is the form every push service accepts`, ES256 with the phone's key;
+  "sub": "https://yon.meo.in.th"}` (RFC 8292 allows an https URL; no email
+  address is published; overridable with the `YON_PUSH_CONTACT` build variable), ES256 with the phone's key;
   header `Authorization: vapid t=<jwt>, k=<public key b64url>`.
 - Request headers: `TTL: 600` (the offer lives 10 min), `Urgency: high`,
   `Topic: yon-offer` (a newer offer replaces an undelivered one),
