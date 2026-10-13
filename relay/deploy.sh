@@ -72,10 +72,15 @@ smoke "$public"
 
 # All checks passed: this release is now current.
 if [ -n "$CURRENT_SHA" ] && [ "$CURRENT_SHA" != "$GIT_SHA" ]; then
-  # WHY: previous moves only on success, so a failed deploy can't push the
-  # last good-but-one release out of the keep list below.
-  docker tag "yon-relay:$CURRENT_SHA" yon-relay:previous
-  printf '%s\n' "$CURRENT_SHA" > "$BASE/previous.tag"
+  if docker image inspect "yon-relay:$CURRENT_SHA" >/dev/null 2>&1; then
+    # WHY: previous moves only on success, so a failed deploy can't push the
+    # last good-but-one release out of the keep list below.
+    docker tag "yon-relay:$CURRENT_SHA" yon-relay:previous
+    printf '%s\n' "$CURRENT_SHA" > "$BASE/previous.tag"
+  else
+    # WHY: the last release's image is gone (pruned on the host); the new release is live and checked, so it still becomes current, just without a rollback target.
+    echo "Warning: yon-relay:$CURRENT_SHA is no longer on this host; keeping the previous rollback target"
+  fi
 fi
 docker tag "yon-relay:$GIT_SHA" yon-relay:current
 printf '%s\n' "$GIT_SHA" > "$BASE/current.tag"
