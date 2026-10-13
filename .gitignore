@@ -32,3 +32,6 @@ site-pages/
 dist-film/
 web/film/film.wav
 web/reel/film.wav
+
+# Local agent config
+.claude/

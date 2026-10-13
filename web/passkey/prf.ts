@@ -1,5 +1,4 @@
-// Pure helpers for the ADR-005 PRF spike (spike.ts), kept apart so the entry
-// bundle has no exports and loads as a classic script.
+// Pure helpers for the ADR-005 passkey PRF work (not wired into the app yet).
 
 /** PRF output from getClientExtensionResults(), or null. Never trusts the shape. */
 export function prfFirst(ext: unknown): Uint8Array<ArrayBuffer> | null {

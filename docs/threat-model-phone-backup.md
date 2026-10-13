@@ -37,7 +37,6 @@ Home Screen app's storage is gone. Builds on the relay model
 - `GET /backup`, `PUT /backup`, `DELETE /backup` on the relay (new, unauthenticated except for `T`)
 - The relay's record store (new state)
 - `navigator.credentials.create/get` with the PRF extension on the phone page
-- The spike page `/phonelink/prf-spike/` while it exists (WebAuthn only, no network)
 
 ### Threats (STRIDE)
 

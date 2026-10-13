@@ -2,6 +2,12 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
+## Unreleased
+
+### Removed
+
+- The temporary test page at `/phonelink/prf-spike/` is gone from the site. Its helper code moved to `web/passkey/` for ADR-005.
+
 ## 0.2.7 — 2026-10-13
 
 ### Fixed
