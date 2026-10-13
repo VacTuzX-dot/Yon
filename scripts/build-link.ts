@@ -39,15 +39,33 @@ const sri = "sha384-" + createHash("sha384").update(new Uint8Array(js)).digest("
 const csp =
   "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; " +
   "connect-src wss: ws://localhost:* ws://127.0.0.1:*; base-uri 'none'; form-action 'none'";
+// WHY: the manifest is for the relay page only (Home Screen app and push); the LAN copy above has none.
 const html = (await Bun.file("web/link.html").text())
   .replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n    <meta http-equiv="Content-Security-Policy" content="${csp}" />\n    <meta name="robots" content="noindex" />`)
-  .replace('<script src="link.js" defer></script>', `<script src="link.js" integrity="${sri}" defer></script>`);
-if (!html.includes(sri) || !html.includes("Content-Security-Policy") || !html.includes("noindex")) throw new Error("site page not patched");
+  .replace('<script src="link.js" defer></script>', `<script src="link.js" integrity="${sri}" defer></script>`)
+  .replace('<link rel="stylesheet" href="link.css" />', `<link rel="manifest" href="manifest.webmanifest" />\n    <link rel="stylesheet" href="link.css" />`);
+if (!html.includes(sri) || !html.includes("Content-Security-Policy") || !html.includes("noindex") || !html.includes("manifest.webmanifest")) {
+  throw new Error("site page not patched");
+}
 const icon = Bun.file("src-tauri/icons/128x128@2x.png");
 await Bun.write(`${phone}/index.html`, html);
 await Bun.write(`${phone}/link.js`, js);
 await Bun.write(`${phone}/link.css`, Bun.file("web/link.css"));
 await Bun.write(`${phone}/icon.png`, icon);
+// Home Screen app (display: standalone) and the push icon. The icon is 256x256 (src-tauri/icons/128x128@2x.png).
+await Bun.write(
+  `${phone}/manifest.webmanifest`,
+  JSON.stringify({
+    name: "Yon",
+    short_name: "Yon",
+    start_url: "./",
+    scope: "./",
+    display: "standalone",
+    background_color: "#181b21",
+    theme_color: "#181b21",
+    icons: [{ src: "icon.png", sizes: "256x256", type: "image/png" }],
+  }) + "\n",
+);
 // The QR decoder for "Add computer" (ADR-004), a dedicated Worker loaded by
 // web/scan.ts only when the browser lacks BarcodeDetector. It is phone-page
 // only: the LAN page has no in-page scan in Phase 1.
@@ -56,6 +74,13 @@ await Bun.write(`${phone}/icon.png`, icon);
 const qr = await Bun.build({ entrypoints: ["web/qr-worker.ts"], outdir: phone, naming: "qr-worker.js", target: "browser", minify: true });
 if (!qr.success) {
   for (const log of qr.logs) console.error(log);
+  process.exit(1);
+}
+// The service worker for push (web/sw.ts): notifications only, no fetch handler, so it can't intercept requests.
+// WHY: no SRI for sw.js, same reason as qr-worker.js: a worker script can't carry an integrity check here.
+const sw = await Bun.build({ entrypoints: ["web/sw.ts"], outdir: phone, naming: "sw.js", target: "browser", minify: true });
+if (!sw.success) {
+  for (const log of sw.logs) console.error(log);
   process.exit(1);
 }
 

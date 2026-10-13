@@ -18,6 +18,7 @@ import {
 import { canScan, scanQr } from "./scan";
 import { RelayTransport, direct, relayWsUrl, type Transport } from "./transport";
 import { isIOS, kindOf, sender } from "./receive";
+import { canPush, disablePush, enablePush, isPushOn, pushSupported, resendSubscription, rotatePush, type Send } from "./push";
 
 type Reply = { result: string; reason?: string; file?: number; next?: number; chunk?: number };
 type Offer = {
@@ -159,6 +160,9 @@ const ui = {
   computers: el("computers"),
   computerList: el<HTMLUListElement>("computer-list"),
   computersDone: el<HTMLButtonElement>("computers-done"),
+  pushLabel: el("push-label"),
+  pushBox: el<HTMLInputElement>("push"),
+  pushHint: el("push-hint"),
   busy: el("busy"),
   status: el("status"),
   fill: el("fill"),
@@ -752,6 +756,65 @@ function stateText(c: Computer): string {
   }
 }
 
+/** Forget one computer, then reload. With push on, the phone's key and subscription rotate first, so the forgotten computer's copy of them stops working. */
+async function forgetAndReload(c: Computer) {
+  const rest = computers.filter((x) => x.pairing.id !== c.pairing.id);
+  try {
+    forgetComputer(storage(), c.pairing.id);
+    // WHY: bounded wait; an offline computer must not hold the screen. A rotation cut short here is repaired on the next open.
+    if (isPushOn()) await Promise.race([rotatePush(sendTo(rest)), sleep(5000)]);
+  } finally {
+    location.reload();
+  }
+}
+
+/** Sends one sealed request to each online computer in `list`. A computer that misses it gets the subscription on its next open (resendSubscription), so failures are not reported. */
+function sendTo(list: Computer[]): Send {
+  return async (path, body) => {
+    const bytes = body === undefined ? new Uint8Array() : utf8ToBytes(JSON.stringify(body));
+    await Promise.allSettled(
+      list.filter((c) => c.state === "online").map((c) => withListener(c, (s) => s.call(path, bytes))),
+    );
+  };
+}
+
+/** The push switch: on, off, or the reason it is unavailable here. */
+function renderPush() {
+  ui.pushHint.hidden = true;
+  ui.pushLabel.hidden = !canPush();
+  if (canPush()) {
+    ui.pushBox.checked = isPushOn();
+  } else if (ios && !standalone && pushSupported()) {
+    // WHY: iOS delivers push only to a Home Screen app; say how to get it instead of hiding the switch.
+    showPushHint("Add Yon to your Home Screen to get notifications.");
+  }
+}
+
+function showPushHint(text: string) {
+  ui.pushHint.textContent = text;
+  ui.pushHint.hidden = false;
+}
+
+/** Turn push on or off. Runs straight from the switch, so the permission prompt stays inside the tap. */
+async function setPush(on: boolean) {
+  ui.pushBox.disabled = true;
+  ui.pushHint.hidden = true;
+  try {
+    if (on) {
+      const r = await enablePush(sendTo(computers));
+      if (r === "denied") showPushHint("Notifications are off for Yon. Allow them in Settings → Notifications.");
+      else if (r === "failed") showPushHint("Couldn't turn on notifications on this phone. Try again.");
+    } else {
+      await disablePush(sendTo(computers));
+    }
+  } finally {
+    ui.pushBox.disabled = false;
+    ui.pushBox.checked = isPushOn(); // show what was actually saved
+  }
+}
+
+ui.pushBox.addEventListener("change", () => void setPush(ui.pushBox.checked));
+
 function openComputers() {
   ui.computerList.replaceChildren(
     ...computers.map((c) => {
@@ -783,13 +846,14 @@ function openComputers() {
       forget.className = "forget";
       forget.textContent = "Forget";
       forget.onclick = () => {
-        forgetComputer(storage(), c.pairing.id);
-        location.reload();
+        forget.disabled = true;
+        void forgetAndReload(c);
       };
       li.append(info, forget);
       return li;
     }),
   );
+  renderPush();
   show(ui.computers);
 }
 
@@ -889,6 +953,8 @@ async function init() {
   // WHY: an offline computer is retried by its loop (backoff), so it can come
   // online later; only a "gone" one (not paired any more) has nothing to poll.
   for (const c of computers) if (c.state !== "gone") void listen(c);
+  // WHY: with push on, every open re-sends the subscription to the online computers: one added since, or a rotation a reload cut short.
+  if (canPush() && isPushOn()) void resendSubscription(sendTo(computers));
 
   const online = computers.filter((c) => c.state === "online");
   if (online.length === 0) {
