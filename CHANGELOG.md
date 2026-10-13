@@ -2,6 +2,32 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
+## 0.2.6 — 2026-10-13
+
+### New
+
+- **Notifications on the phone when a computer wants to send you files.** In the Yon icon, open **Computers** and turn on **Notify me when files arrive**. When a computer offers files and the page is closed, the phone shows "Leo's MacBook — wants to send you 3 files"; tap it to open Yon with the offer waiting. On iPhone this needs the Yon icon on the Home Screen (iOS 16.4 or later). Works with computers that have **Reach from anywhere** on. The computer sends the notification itself to Apple's, Google's, Mozilla's or Microsoft's push service; the relay learns nothing new. A Yon icon added to the Home Screen before this version may need to be added again to get notifications.
+- **Receive automatically from your own computers.** Tick **Always receive from …** on an offer, or use **Receive automatically** in **Computers**. Offers from that computer then start without a tap while the page is open; offers another phone sends through it still ask.
+- **Save to Photos on iPhone.** After receiving, **Save to Photos** puts every photo and video in the Photos library with one tap ("Save N Images" in the share sheet); **Save to Files** takes the rest. On Android, received files go straight to `Download/` and show up in the Gallery.
+- **The phone says where files came from**: "From Leo's MacBook", or "From Leo's iPhone via Leo's MacBook" when another phone sent them through that computer.
+
+### Changed
+
+- When a computer paired with Reach from anywhere can't be reached, the phone now says to check that Yon is open on it and Reach from anywhere is on, instead of pointing at the Wi-Fi.
+- **Add computer** is on every screen of the phone page, also when every computer is offline.
+- The relay and the website run on Bun 1.4, and CI now tests them inside the Docker image they ship in.
+- Updated: Tauri 2.12.1, tokio-rustls 0.26.6 (a dropped TLS error no longer stalls a transfer until its timeout), Vite 8.3.3, TypeScript 7.
+
+### Security
+
+- The computer only sends notifications to the four push services above, over https; a paired phone can't make it contact any other address. Notifications never contain file names, and their content is encrypted for the phone. Details: [threat model](docs/threat-model-phone-push.md).
+- Fixed: the website and relay deploy scripts reported a healthy deploy as failed (and kept pointing at a missing image) when the previous image had been removed from the server.
+
+### Known problems
+
+> [!WARNING]
+> **A device that was already open may not show a device that opens later.** Still open from 0.2.4: the new device sees the old one, but the old one's list stays empty until it is restarted (Quit Yon, or End task on Windows, then open it again). Transfers between devices that do see each other are not affected.
+
 ## 0.2.5 — 2026-10-09
 
 ### New

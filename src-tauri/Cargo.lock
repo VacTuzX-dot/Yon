@@ -5643,7 +5643,7 @@ dependencies = [
 
 [[package]]
 name = "yon"
-version = "0.2.5"
+version = "0.2.6"
 dependencies = [
  "futures-util",
  "gethostname",
