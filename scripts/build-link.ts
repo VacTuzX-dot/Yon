@@ -91,6 +91,28 @@ if (!sw.success) {
   for (const log of sw.logs) console.error(log);
   process.exit(1);
 }
+// TECH DEBT: throwaway device spike for ADR-005 (does PRF survive deleting the Home Screen icon?).
+// Remove this block and web/prf-spike/ before passkey backup ships (docs/threat-model-phone-backup.md).
+const spikeDir = `${phone}/prf-spike`;
+const spike = await Bun.build({ entrypoints: ["web/prf-spike/spike.ts"], outdir: spikeDir, naming: "spike.js", target: "browser", minify: true });
+if (!spike.success) {
+  for (const log of spike.logs) console.error(log);
+  process.exit(1);
+}
+await Bun.write(`${spikeDir}/index.html`, Bun.file("web/prf-spike/index.html"));
+await Bun.write(
+  `${spikeDir}/manifest.webmanifest`,
+  JSON.stringify({
+    name: "Yon PRF test",
+    short_name: "PRF test",
+    start_url: "./",
+    scope: "./",
+    display: "standalone",
+    background_color: "#181b21",
+    theme_color: "#181b21",
+    icons: [{ src: "../icon-192.png", sizes: "192x192", type: "image/png" }],
+  }) + "\n",
+);
 
 for (const f of ["home.css", "home.js", "toss.wav"]) await Bun.write(`${site}/${f}`, Bun.file(`web/home/${f}`));
 // The download dialog links straight to this version's release files (the
