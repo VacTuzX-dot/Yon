@@ -2,6 +2,16 @@
 
 Known problems are in red boxes, with the version that fixes them and what to do if you're affected.
 
+## 0.2.7 — 2026-10-13
+
+### Fixed
+
+- **The Yon icon on the iPhone Home Screen** now shows the Yon picture. The phone page gave iOS the desktop icon, whose transparent edges iOS can't use. Android gets proper 192 and 512 pixel icons too. An icon already on your Home Screen keeps its old picture; adding it again would mean scanning each computer's code again, so only do that if the picture bothers you.
+
+### Changed
+
+- A temporary test page at `/phonelink/prf-spike/` checks whether a passkey can keep your list of computers after the Yon icon is deleted ([ADR-005](docs/adr/ADR-005-phone-keyring-passkey-backup.md), proposed). It stores nothing and sends nothing; it will be removed.
+
 ## 0.2.6 — 2026-10-13
 
 ### New
