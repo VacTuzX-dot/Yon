@@ -12,6 +12,7 @@
 pub mod crypto;
 pub mod http;
 pub mod outbox;
+pub mod push;
 pub mod remote;
 
 use crate::client::{OutFile, SendOutcome, SendStatus};
