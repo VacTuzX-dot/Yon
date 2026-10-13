@@ -560,6 +560,17 @@ pub fn setup(app: &AppHandle) -> Result<AppState, String> {
             }
         });
     }));
+    let push_app = app.clone();
+    state.link.set_on_push(Arc::new(move |id, change| {
+        // WHY: called from inside a Link request; save and `sync_link` run on
+        // another task, as for pairing above.
+        let app = push_app.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Some(state) = app.try_state::<AppState>() {
+                state.store_push(&hex(&id), change).await;
+            }
+        });
+    }));
     if has_pending {
         state.ensure_expiry_timer();
     }
@@ -600,6 +611,7 @@ impl AppState {
                     id: unhex::<16>(&p.id)?,
                     key: unhex::<32>(&p.key)?,
                     name: p.name.clone(),
+                    push: p.push.clone(),
                 })
             })
             .collect();
@@ -723,6 +735,24 @@ impl AppState {
             self.sync_link().await;
             self.emit_settings();
         }
+    }
+
+    /// Persist a phone's Web Push subscription (or its removal), then re-sync
+    /// Link so the change takes effect for sends.
+    async fn store_push(&self, phone: &str, change: crate::link::push_send::PushChange) {
+        {
+            let mut s = self.settings.lock().expect("lock");
+            let mut next = s.clone();
+            if !next.apply_push(phone, change) {
+                return;
+            }
+            if let Err(e) = next.save(&self.data_dir) {
+                eprintln!("[yon] couldn't save push subscription: {e}");
+                return;
+            }
+            *s = next;
+        }
+        self.sync_link().await;
     }
 
     /// Drop expired pending pairings. Returns whether any pending remain.
@@ -1257,6 +1287,7 @@ pub async fn pair_phone(
             created: unix_now(),
             relay: relay.clone().unwrap_or_default(),
             replaces: replaces.clone(),
+            push: None,
         }) {
             return Err("Too many phones paired. Remove one first.".into());
         }
@@ -1271,7 +1302,12 @@ pub async fn pair_phone(
         state.ensure_expiry_timer();
     }
     state.sync_link().await;
-    let phone = Phone { id, key, name };
+    let phone = Phone {
+        id,
+        key,
+        name,
+        push: None,
+    };
     let anywhere = {
         let s = state.settings.lock().expect("lock");
         match (unhex::<32>(&s.room_secret), &anywhere_relay) {

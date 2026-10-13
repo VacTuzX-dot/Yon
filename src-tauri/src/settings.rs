@@ -1,6 +1,7 @@
 //! User settings persisted as JSON in the app data dir.
 
 use crate::identity::{parse_fingerprint, Fingerprint};
+use crate::link::push_send::{self, PushChange, PushSub};
 use crate::protocol::{hex, MAX_DEVICE_NAME_BYTES};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -66,6 +67,10 @@ pub struct PairedPhone {
     /// replaces once it has proven its key.
     #[serde(default)]
     pub replaces: Option<String>,
+    /// Web Push subscription for the phone's page (see `link::push_send`).
+    /// Missing in files from before v0.2.5 → None.
+    #[serde(default)]
+    pub push: Option<PushSub>,
 }
 
 const MAX_PHONES: usize = 20;
@@ -134,6 +139,8 @@ impl Settings {
                 s.phones.truncate(MAX_PHONES);
                 for p in &mut s.phones {
                     p.relay = validate_relay_url(&p.relay).unwrap_or_default();
+                    // A subscription that no longer validates is dropped, not sent to.
+                    p.push = p.push.take().filter(push_send::validate);
                 }
                 if crate::protocol::unhex::<32>(&s.room_secret).is_none() {
                     s.room_secret.clear();
@@ -172,6 +179,29 @@ impl Settings {
             return false;
         }
         self.phones.push(phone);
+        true
+    }
+
+    /// Apply a push subscription change to one phone. Returns whether
+    /// anything changed (so the caller saves only then).
+    pub fn apply_push(&mut self, phone: &str, change: PushChange) -> bool {
+        let Some(p) = self.phones.iter_mut().find(|p| p.id == phone) else {
+            return false;
+        };
+        let next = match change {
+            PushChange::Set(sub) => Some(sub),
+            PushChange::Clear => None,
+            PushChange::GoneIf(endpoint) => {
+                if p.push.as_ref().is_none_or(|s| s.endpoint != endpoint) {
+                    return false;
+                }
+                None
+            }
+        };
+        if p.push == next {
+            return false;
+        }
+        p.push = next;
         true
     }
 
@@ -456,6 +486,7 @@ mod tests {
                 created: 1,
                 relay: "wss://relay.example.com".into(),
                 replaces: None,
+                push: None,
             }],
             trusted: vec![TrustedDevice {
                 id: "ab".repeat(32),
@@ -540,6 +571,77 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
+    #[test]
+    fn push_subscription_loads_only_when_valid() {
+        let dir = temp_dir("settings-push");
+        let dl = Path::new("/d");
+        let sub = serde_json::json!({
+            "endpoint": "https://web.push.apple.com/abc",
+            "p256dh": "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+            "auth": "BTBZMqHH6r4Tts7J_aSIgg",
+            "vapid_d": "yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw",
+            "vapid_pub": "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8",
+        });
+        let mut bad = sub.clone();
+        bad["endpoint"] = "https://evil.example/x".into();
+        let file = |push: Option<&serde_json::Value>| {
+            let mut phone = serde_json::json!({
+                "id": hex(&[1; 16]),
+                "key": hex(&[2; 32]),
+                "name": "p",
+                "created": 1,
+            });
+            if let Some(p) = push {
+                phone["push"] = p.clone();
+            }
+            let mut whole = serde_json::to_value(Settings::defaults(dl)).unwrap();
+            whole["phones"] = serde_json::json!([phone]);
+            whole.to_string()
+        };
+        // Old file: no push field at all.
+        fs::write(dir.join(FILE), file(None)).unwrap();
+        let s = Settings::load(&dir, dl);
+        assert_eq!(s.phones.len(), 1);
+        assert_eq!(s.phones[0].push, None);
+        // Valid subscription is kept.
+        fs::write(dir.join(FILE), file(Some(&sub))).unwrap();
+        let s = Settings::load(&dir, dl);
+        assert_eq!(
+            s.phones[0].push.as_ref().unwrap().endpoint,
+            "https://web.push.apple.com/abc"
+        );
+        // A subscription to a host that isn't a push service is dropped.
+        fs::write(dir.join(FILE), file(Some(&bad))).unwrap();
+        let s = Settings::load(&dir, dl);
+        assert_eq!(s.phones.len(), 1);
+        assert_eq!(s.phones[0].push, None);
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn gone_clears_only_the_endpoint_that_failed() {
+        let sub = |e: &str| PushSub {
+            endpoint: e.into(),
+            p256dh: "a".into(),
+            auth: "b".into(),
+            vapid_d: "c".into(),
+            vapid_pub: "d".into(),
+        };
+        let mut s = with_phones(vec![phone(1, None, 10)]);
+        let old = "https://web.push.apple.com/old";
+        let new = "https://web.push.apple.com/new";
+        assert!(s.apply_push(&id(1), PushChange::Set(sub(old))));
+        // Re-subscribed before the 410 for the old endpoint arrives.
+        assert!(s.apply_push(&id(1), PushChange::Set(sub(new))));
+        assert!(!s.apply_push(&id(1), PushChange::GoneIf(old.into())));
+        assert_eq!(s.phones[0].push.as_ref().unwrap().endpoint, new);
+        // The current endpoint gone: cleared.
+        assert!(s.apply_push(&id(1), PushChange::GoneIf(new.into())));
+        assert_eq!(s.phones[0].push, None);
+        // Unknown phone: nothing.
+        assert!(!s.apply_push(&id(9), PushChange::Clear));
+    }
+
     fn phone(id: u8, replaces: Option<u8>, created: u64) -> PairedPhone {
         PairedPhone {
             id: hex(&[id; 16]),
@@ -548,6 +650,7 @@ mod tests {
             created,
             relay: String::new(),
             replaces: replaces.map(|r| hex(&[r; 16])),
+            push: None,
         }
     }
 
